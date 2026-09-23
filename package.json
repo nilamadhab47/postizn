@@ -1,0 +1,14 @@
+{
+  "name": "postn",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @postn/web --filter @postn/api dev",
+    "dev:web": "pnpm --filter @postn/web dev",
+    "dev:api": "pnpm --filter @postn/api dev",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @postn/api prisma:migrate",
+    "db:studio": "pnpm --filter @postn/api prisma:studio"
+  }
+}

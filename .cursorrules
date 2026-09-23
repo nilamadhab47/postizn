@@ -1,0 +1,30 @@
+# postN — Cursor Rules
+
+## Reference Codebase
+You have access to the open-source Postiz social media scheduler at ./_reference/
+Use it to study patterns but NEVER copy code directly. Write fresh implementations.
+
+## Key reference paths:
+- OAuth + social providers: _reference/libraries/nestjs-libraries/src/integrations/social/
+- Database schema: _reference/prisma/schema.prisma
+- Job scheduling: _reference/libraries/nestjs-libraries/src/bull-mq-transport/
+- Post creation: _reference/apps/backend/src/api/routes/posts/
+- Frontend components: _reference/apps/frontend/src/components/
+
+## Our stack:
+- Product: postN
+- Frontend: Next.js App Router + Tailwind
+- Backend: NestJS + Prisma + PostgreSQL
+- Queue: Redis + BullMQ
+- Media: Cloudflare R2
+- Auth: NestJS Google OAuth + JWT cookie (no NextAuth)
+- AI: Claude API (Sonnet)
+- Payments: Razorpay (after MVP core)
+
+## Patterns to follow:
+- Provider abstraction: each social platform implements BaseProvider
+- Posts have PostTargets (one per platform) with independent status tracking
+- BullMQ delayed jobs for scheduling; store jobId; publish must be idempotent
+- NestJS owns all OAuth callbacks on :4000
+- Shared types in packages/shared
+- Default timezone Asia/Kolkata; store timestamps in UTC

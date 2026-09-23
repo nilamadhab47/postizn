@@ -1,0 +1,34 @@
+---
+description: postN core architecture, stack, and Postiz reference rules
+alwaysApply: true
+---
+
+# postN
+
+India-first social scheduler for founders and D2C brands. Product name is **postN**.
+
+## Reference codebase
+
+Study `./_reference/` (Postiz, gitignored) for patterns. Never copy code, names, or error strings. Write fresh implementations.
+
+Key paths:
+
+- OAuth + providers: `_reference/libraries/nestjs-libraries/src/integrations/social/`
+- Schema: `_reference/prisma/schema.prisma`
+- Jobs: `_reference/libraries/nestjs-libraries/src/bull-mq-transport/`
+
+## Stack
+
+- Frontend: Next.js App Router + Tailwind (`apps/web`)
+- Backend: NestJS + Prisma + PostgreSQL (`apps/api`)
+- Queue: Redis + BullMQ (in-process worker, single replica)
+- Auth: NestJS owns all OAuth (Google login + social connect). No NextAuth.
+- Payments: Razorpay (week 2). Media: R2. AI: Claude.
+
+## Patterns
+
+- Each platform implements `BaseProvider`: `authenticate`, `publishPost`, `uploadMedia`, `refreshToken`
+- `Post` has many `PostTarget`s (independent status per platform)
+- Store UTC, display `Asia/Kolkata`. Persist BullMQ `jobId`. Idempotent publishes.
+- Social OAuth callbacks live on the API (`:4000`), not Next.js
+- Shared types in `packages/shared`

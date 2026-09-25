@@ -1,3 +1,6 @@
+/**
+ * Parked with GoogleStrategy. Not registered in AuthModule.
+ */
 import {
   ExecutionContext,
   Injectable,

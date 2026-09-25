@@ -1,41 +1,44 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Req,
-  Res,
-  UseGuards,
-} from "@nestjs/common";
-import type { Request, Response } from "express";
-import { ConfigService } from "@nestjs/config";
+import { Body, Controller, Get, Post, Res, UseGuards } from "@nestjs/common";
+import type { Response } from "express";
 import { AuthService, SESSION_COOKIE } from "./auth.service";
-import { GoogleAuthGuard } from "./google-auth.guard";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 import { CurrentUser, type JwtUser } from "./current-user.decorator";
 
+type CredentialsBody = {
+  email?: string;
+  password?: string;
+  name?: string;
+};
+
 @Controller("auth")
 export class AuthController {
-  constructor(
-    private readonly auth: AuthService,
-    private readonly config: ConfigService,
-  ) {}
+  constructor(private readonly auth: AuthService) {}
 
-  @Get("google")
-  @UseGuards(GoogleAuthGuard)
-  googleStart() {
-    return;
+  @Post("register")
+  async register(
+    @Body() body: CredentialsBody,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const user = await this.auth.register({
+      email: body.email ?? "",
+      password: body.password ?? "",
+      name: body.name,
+    });
+    this.setSession(res, user.id);
+    return this.auth.getMe(user.id);
   }
 
-  @Get("google/callback")
-  @UseGuards(GoogleAuthGuard)
-  async googleCallback(
-    @Req() req: Request & { user: { id: string } },
-    @Res() res: Response,
+  @Post("login")
+  async login(
+    @Body() body: CredentialsBody,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    const token = this.auth.signSession(req.user.id);
-    res.cookie(SESSION_COOKIE, token, this.auth.cookieOptions());
-    const frontend = this.config.get<string>("FRONTEND_URL") ?? "http://localhost:3000";
-    return res.redirect(`${frontend}/dashboard`);
+    const user = await this.auth.login({
+      email: body.email ?? "",
+      password: body.password ?? "",
+    });
+    this.setSession(res, user.id);
+    return this.auth.getMe(user.id);
   }
 
   @Get("me")
@@ -46,7 +49,11 @@ export class AuthController {
 
   @Post("logout")
   logout(@Res({ passthrough: true }) res: Response) {
-    res.clearCookie(SESSION_COOKIE, { path: "/" });
+    res.clearCookie(SESSION_COOKIE, this.auth.clearCookieOptions());
     return { ok: true };
+  }
+
+  private setSession(res: Response, userId: string) {
+    res.cookie(SESSION_COOKIE, this.auth.signSession(userId), this.auth.cookieOptions());
   }
 }

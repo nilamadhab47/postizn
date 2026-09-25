@@ -6,14 +6,25 @@ export const FREE_POSTS_PER_MONTH = 30;
 export const PLATFORM_CHAR_LIMITS = {
   TWITTER: 280,
   LINKEDIN: 3000,
+  LINKEDIN_PAGE: 3000,
   TELEGRAM: 4096,
+  DEVTO: 100000,
+  SLACK: 40000,
+  DISCORD: 2000,
 } as const;
 
 export const DEFAULT_TIMEZONE = "Asia/Kolkata";
 
 export type Plan = "FREE" | "PRO";
 
-export type Platform = "TWITTER" | "LINKEDIN" | "TELEGRAM";
+export type Platform =
+  | "TWITTER"
+  | "LINKEDIN"
+  | "LINKEDIN_PAGE"
+  | "TELEGRAM"
+  | "DEVTO"
+  | "SLACK"
+  | "DISCORD";
 
 export type PostStatus =
   | "DRAFT"
@@ -39,6 +50,7 @@ export type SocialAccount = {
   displayName: string | null;
   avatar: string | null;
   isActive: boolean;
+  isMock: boolean;
 };
 
 export type Post = {

@@ -1,3 +1,7 @@
+/**
+ * Parked. Google login is not wired into AuthModule.
+ * Re-register GoogleStrategy + GoogleAuthGuard and restore /auth/google routes when OAuth comes back.
+ */
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PassportStrategy } from "@nestjs/passport";

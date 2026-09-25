@@ -8,12 +8,12 @@ export function AppHeader({
   action?: { href: string; label: string };
 }) {
   return (
-    <header className="flex h-14 items-center justify-between border-b border-line px-6">
-      <h1 className="text-sm font-medium">{title}</h1>
+    <header className="flex h-16 items-center justify-between border-b border-line px-6">
+      <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
       {action ? (
         <Link
           href={action.href}
-          className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg"
+          className="rounded-xl bg-accent px-4 py-2 text-sm font-bold text-accent-fg"
         >
           {action.label}
         </Link>

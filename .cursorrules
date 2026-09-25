@@ -6,8 +6,9 @@ Use it to study patterns but NEVER copy code directly. Write fresh implementatio
 
 ## Key reference paths:
 - OAuth + social providers: _reference/libraries/nestjs-libraries/src/integrations/social/
-- Database schema: _reference/prisma/schema.prisma
-- Job scheduling: _reference/libraries/nestjs-libraries/src/bull-mq-transport/
+- Database schema: _reference/libraries/nestjs-libraries/src/database/prisma/schema.prisma
+- Job scheduling: _reference/apps/orchestrator/ (Temporal). postN uses Redis + BullMQ.
+- Milestones: docs/milestones.md
 - Post creation: _reference/apps/backend/src/api/routes/posts/
 - Frontend components: _reference/apps/frontend/src/components/
 
@@ -17,7 +18,7 @@ Use it to study patterns but NEVER copy code directly. Write fresh implementatio
 - Backend: NestJS + Prisma + PostgreSQL
 - Queue: Redis + BullMQ
 - Media: Cloudflare R2
-- Auth: NestJS Google OAuth + JWT cookie (no NextAuth)
+- Auth: NestJS email/password + JWT cookie (Google OAuth parked; no NextAuth)
 - AI: Claude API (Sonnet)
 - Payments: Razorpay (after MVP core)
 

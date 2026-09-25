@@ -48,4 +48,12 @@ export type Me = {
   image: string | null;
   plan: "FREE" | "PRO";
   timezone: string;
+  entitlements?: {
+    plan: "FREE" | "PRO";
+    channelLimit: number;
+    postsPerMonth: number | null;
+    imageCap: number | null;
+    freeChannels: string[];
+    proChannels: string[];
+  };
 };

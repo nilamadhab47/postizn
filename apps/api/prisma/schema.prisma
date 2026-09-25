@@ -15,7 +15,12 @@ enum Plan {
 enum Platform {
   TWITTER
   LINKEDIN
+  LINKEDIN_PAGE
   TELEGRAM
+  MEDIUM
+  DEVTO
+  SLACK
+  DISCORD
 }
 
 enum PostStatus {
@@ -31,6 +36,7 @@ model User {
   email          String   @unique
   name           String?
   image          String?
+  passwordHash   String?
   googleId       String?  @unique
   emailVerified  DateTime?
   plan           Plan     @default(FREE)
@@ -56,6 +62,7 @@ model SocialAccount {
   refreshToken String?
   tokenExpiry  DateTime?
   isActive     Boolean   @default(true)
+  isMock       Boolean   @default(false)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -63,6 +70,7 @@ model SocialAccount {
   posts PostTarget[]
 
   @@unique([platform, platformId])
+  @@unique([userId, platform])
   @@index([userId])
 }
 

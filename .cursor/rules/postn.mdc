@@ -14,15 +14,15 @@ Study `./_reference/` (Postiz, gitignored) for patterns. Never copy code, names,
 Key paths:
 
 - OAuth + providers: `_reference/libraries/nestjs-libraries/src/integrations/social/`
-- Schema: `_reference/prisma/schema.prisma`
-- Jobs: `_reference/libraries/nestjs-libraries/src/bull-mq-transport/`
+- Schema: `_reference/libraries/nestjs-libraries/src/database/prisma/schema.prisma`
+- Jobs: `_reference/apps/orchestrator/` (Temporal). We use BullMQ, not Temporal.
 
 ## Stack
 
 - Frontend: Next.js App Router + Tailwind (`apps/web`)
 - Backend: NestJS + Prisma + PostgreSQL (`apps/api`)
 - Queue: Redis + BullMQ (in-process worker, single replica)
-- Auth: NestJS owns all OAuth (Google login + social connect). No NextAuth.
+- Auth: NestJS owns login and social OAuth. Email/password is the current user login. Google OAuth is parked. No NextAuth.
 - Payments: Razorpay (week 2). Media: R2. AI: Claude.
 
 ## Patterns

@@ -11,20 +11,20 @@ import { Stats } from "./stats";
 import { Faq } from "./faq";
 import { CtaSection, LandingFooter } from "./cta-footer";
 
-export function LandingPage() {
+export function LandingPage({ waitlistMode }: { waitlistMode: boolean }) {
   return (
     <ReactLenis root options={{ lerp: 0.1, smoothWheel: true }}>
       <div className="relative min-h-screen overflow-x-clip bg-background text-foreground">
-        <LandingNav />
-        <Hero />
+        <LandingNav waitlistMode={waitlistMode} />
+        <Hero waitlistMode={waitlistMode} />
         <ChannelMarquee />
         <LiveDemo />
         <Features />
         <HowItWorks />
         <Stats />
         <Faq />
-        <CtaSection />
-        <LandingFooter />
+        <CtaSection waitlistMode={waitlistMode} />
+        <LandingFooter waitlistMode={waitlistMode} />
       </div>
     </ReactLenis>
   );

@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from "react";
 import { IconGlobe } from "./icon-globe";
 import { ShimmerButton, SplitWords } from "./motion-bits";
 import { WaitlistForm } from "./waitlist-form";
-import { WAITLIST_MODE } from "@/lib/site";
 
 function useIsDesktop() {
   const [desktop, setDesktop] = useState(true);
@@ -39,7 +38,7 @@ function IstClock() {
   return <span className="tabular-nums">{now || "—:—:—"}</span>;
 }
 
-export function Hero() {
+export function Hero({ waitlistMode }: { waitlistMode: boolean }) {
   const isDesktop = useIsDesktop();
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
@@ -137,7 +136,7 @@ export function Hero() {
             </p>
 
             <div className="mt-9 flex flex-wrap items-center justify-center gap-4 lg:justify-start">
-              {WAITLIST_MODE ? (
+              {waitlistMode ? (
                 <WaitlistForm id="hero-waitlist" />
               ) : (
                 <>

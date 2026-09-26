@@ -1,7 +1,6 @@
 "use client";
 
 import { motion, useScroll, useTransform } from "motion/react";
-import { WAITLIST_MODE } from "@/lib/site";
 
 const LINKS = [
   { label: "Demo", href: "#demo" },
@@ -10,7 +9,7 @@ const LINKS = [
   { label: "FAQ", href: "#faq" },
 ];
 
-export function LandingNav() {
+export function LandingNav({ waitlistMode }: { waitlistMode: boolean }) {
   const { scrollY } = useScroll();
   const bg = useTransform(scrollY, [0, 120], ["rgba(20,16,31,0)", "rgba(20,16,31,0.85)"]);
   const border = useTransform(scrollY, [0, 120], ["rgba(74,63,99,0)", "rgba(74,63,99,0.6)"]);
@@ -45,7 +44,7 @@ export function LandingNav() {
         </div>
 
         <div className="flex items-center gap-2">
-          {WAITLIST_MODE ? (
+          {waitlistMode ? (
             <motion.a
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.96 }}

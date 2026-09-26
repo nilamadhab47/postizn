@@ -21,8 +21,9 @@ export const SITE_KEYWORDS = [
 
 export const PRODUCTION_SITE_URL = "https://www.postind.xyz";
 
+/** Server-only. Set SITE_URL on Vercel (plain Config, no NEXT_PUBLIC_). */
 export const SITE_URL = (
-  process.env.NEXT_PUBLIC_SITE_URL ||
+  process.env.SITE_URL ||
   (process.env.NODE_ENV === "production" ? PRODUCTION_SITE_URL : "") ||
   (process.env.VERCEL_PROJECT_PRODUCTION_URL
     ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
@@ -37,10 +38,10 @@ export const GITHUB_URL = "https://github.com/nilamadhab47/postizn";
 export const X_URL = `https://x.com/${X_HANDLE}`;
 
 /**
- * Production hides Sign in / Start free and shows the waitlist.
- * Local `next dev` keeps auth. Override with NEXT_PUBLIC_WAITLIST_MODE=true|false.
+ * Server-only. Production hides Sign in and shows the waitlist.
+ * Override with WAITLIST_MODE=true|false (no NEXT_PUBLIC_ prefix).
  */
 export const WAITLIST_MODE =
-  process.env.NEXT_PUBLIC_WAITLIST_MODE != null
-    ? process.env.NEXT_PUBLIC_WAITLIST_MODE === "true"
+  process.env.WAITLIST_MODE != null
+    ? process.env.WAITLIST_MODE === "true"
     : process.env.NODE_ENV === "production";

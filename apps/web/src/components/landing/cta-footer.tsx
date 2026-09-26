@@ -5,7 +5,6 @@ import { ArrowRight, Mail } from "lucide-react";
 import { ChannelIcon } from "@/components/accounts/channel-icons";
 import { Reveal, ShimmerButton } from "./motion-bits";
 import { WaitlistForm } from "./waitlist-form";
-import { WAITLIST_MODE } from "@/lib/site";
 
 const GITHUB_URL = "https://github.com/nilamadhab47/postizn";
 const X_URL = "https://x.com/MadhabCoder";
@@ -27,7 +26,7 @@ function GithubGlyph({ className }: { className?: string }) {
   );
 }
 
-export function CtaSection() {
+export function CtaSection({ waitlistMode }: { waitlistMode: boolean }) {
   return (
     <section id="waitlist" className="relative overflow-hidden px-6 py-32">
       {/* Aurora glow */}
@@ -46,14 +45,14 @@ export function CtaSection() {
         </Reveal>
         <Reveal delay={0.15}>
           <p className="mt-6 max-w-lg text-lg text-muted">
-            {WAITLIST_MODE
+            {waitlistMode
               ? "We're opening soon. Drop your email and be first in when postN goes live — IST scheduling, six channels, one draft."
               : "Stop rewriting the same update six times. Start free — no card, no trial countdown, just posting."}
           </p>
         </Reveal>
         <Reveal delay={0.3}>
           <div className="mt-10 flex justify-center">
-            {WAITLIST_MODE ? (
+            {waitlistMode ? (
               <WaitlistForm id="cta-waitlist" />
             ) : (
               <ShimmerButton href="/register" className="px-10 py-4 text-base">
@@ -87,7 +86,7 @@ export function CtaSection() {
   );
 }
 
-export function LandingFooter() {
+export function LandingFooter({ waitlistMode }: { waitlistMode: boolean }) {
   const year = new Date().getFullYear();
   return (
     <footer className="border-t border-line/40 bg-sidebar/60">
@@ -146,7 +145,7 @@ export function LandingFooter() {
             ]}
           />
 
-          {WAITLIST_MODE ? (
+          {waitlistMode ? (
             <div>
               <h3 className="text-xs font-extrabold uppercase tracking-[0.18em] text-foreground/70">
                 Waitlist

@@ -103,17 +103,24 @@ export function Hero({ waitlistMode }: { waitlistMode: boolean }) {
     offset: ["start start", "end end"],
   });
 
-  // Phase 1 — the question, alone on screen.
-  const qOpacity = useTransform(scrollYProgress, [0.16, 0.3], [1, 0]);
-  const qScale = useTransform(scrollYProgress, [0.16, 0.3], [1, 0.92]);
-  const qY = useTransform(scrollYProgress, [0.16, 0.3], [0, -70]);
+  // Act 1 — pitch black, only the question.
+  const qOpacity = useTransform(scrollYProgress, [0.14, 0.26], [1, 0]);
+  const qScale = useTransform(scrollYProgress, [0.14, 0.26], [1, 0.93]);
+  const qY = useTransform(scrollYProgress, [0.14, 0.26], [0, -60]);
 
-  // Phase 2 — the answer: the composer zooms in and locks center.
-  const dOpacity = useTransform(scrollYProgress, [0.28, 0.46], [0, 1]);
-  const dScale = useTransform(scrollYProgress, [0.28, 0.56], [0.78, 1]);
-  const dY = useTransform(scrollYProgress, [0.28, 0.56], [160, 0]);
+  // Act 2 — the question is gone; the demo alone in the dark.
+  const dOpacity = useTransform(scrollYProgress, [0.24, 0.38], [0, 1]);
+  const dScale = useTransform(scrollYProgress, [0.24, 0.5], [0.8, 1]);
+  const dY = useTransform(scrollYProgress, [0.24, 0.5], [140, 0]);
 
-  const hintOpacity = useTransform(scrollYProgress, [0, 0.1], [1, 0]);
+  // Act 3 — the reveal: auroras + nav fade in, the question returns as the
+  // hero heading above the demo, CTA appears below.
+  const revealOpacity = useTransform(scrollYProgress, [0.55, 0.7], [0, 1]);
+  const titleOpacity = useTransform(scrollYProgress, [0.58, 0.72], [0, 1]);
+  const titleY = useTransform(scrollYProgress, [0.58, 0.72], [24, 0]);
+  const ctaOpacity = useTransform(scrollYProgress, [0.62, 0.76], [0, 1]);
+
+  const hintOpacity = useTransform(scrollYProgress, [0.45, 0.55], [1, 0]);
 
   if (!isDesktop) {
     // Mobile: same story, normal flow — no pinning.
@@ -135,11 +142,17 @@ export function Hero({ waitlistMode }: { waitlistMode: boolean }) {
   }
 
   return (
-    <section ref={ref} id="demo" className="relative h-[300vh]">
-      <div className="sticky top-0 flex h-screen items-center justify-center overflow-hidden px-6">
-        <HeroBackdrop />
+    <section ref={ref} id="demo" className="relative h-[320vh]">
+      <div className="sticky top-0 flex h-screen items-center justify-center overflow-hidden bg-black px-6">
+        {/* Act 3 backdrop: the real site (auroras + dot grid) fades in over black */}
+        <motion.div
+          style={{ opacity: revealOpacity }}
+          className="pointer-events-none absolute inset-0 bg-background"
+        >
+          <HeroBackdrop />
+        </motion.div>
 
-        {/* Phase 1: the question */}
+        {/* Act 1: the question, alone in the dark */}
         <motion.div
           style={{ opacity: qOpacity, scale: qScale, y: qY }}
           className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center px-6 text-center"
@@ -147,7 +160,7 @@ export function Hero({ waitlistMode }: { waitlistMode: boolean }) {
           <QuestionCopy />
         </motion.div>
 
-        {/* Scroll hint */}
+        {/* Scroll hint — lives until the reveal */}
         <motion.div
           style={{ opacity: hintOpacity }}
           className="pointer-events-none absolute inset-x-0 bottom-10 z-10 flex flex-col items-center gap-2.5"
@@ -159,21 +172,29 @@ export function Hero({ waitlistMode }: { waitlistMode: boolean }) {
           >
             <div className="h-2 w-1 rounded-full bg-accent" />
           </motion.div>
-          <span className="text-xs text-muted/60">scroll for the answer</span>
+          <span className="text-xs text-muted/60">keep scrolling</span>
         </motion.div>
 
-        {/* Phase 2: the answer — the composer, playing itself */}
+        {/* Acts 2 + 3: the demo, then the question crowning it as the hero */}
         <motion.div
           style={{ opacity: dOpacity, scale: dScale, y: dY }}
           className="relative z-20 w-full max-w-5xl"
         >
-          <p className="text-center text-sm font-bold uppercase tracking-[0.3em] text-accent">
-            Like this. <span className="text-muted/70 normal-case tracking-normal">One draft → every feed.</span>
-          </p>
-          <ComposeDemo className="mt-5" />
-          <div className="mt-6 flex justify-center">
+          <motion.h2
+            style={{ opacity: titleOpacity, y: titleY }}
+            className="text-center text-3xl font-extrabold tracking-tight md:text-4xl"
+          >
+            How do you show up on{" "}
+            <span className="gradient-text">six platforms</span> at once?{" "}
+            <span className="text-muted">Like this.</span>
+          </motion.h2>
+          <ComposeDemo className="mt-6" />
+          <motion.div
+            style={{ opacity: ctaOpacity }}
+            className="mt-6 flex justify-center"
+          >
             <DemoCta waitlistMode={waitlistMode} />
-          </div>
+          </motion.div>
         </motion.div>
       </div>
     </section>

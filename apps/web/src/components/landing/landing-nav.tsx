@@ -1,6 +1,8 @@
 "use client";
 
 import { motion, useScroll, useTransform } from "motion/react";
+import { useEffect, useState } from "react";
+import { useIsDesktop } from "./hero";
 
 const LINKS = [
   { label: "Demo", href: "#demo" },
@@ -10,17 +12,35 @@ const LINKS = [
 ];
 
 export function LandingNav({ waitlistMode }: { waitlistMode: boolean }) {
+  const isDesktop = useIsDesktop();
   const { scrollY } = useScroll();
   const bg = useTransform(scrollY, [0, 120], ["rgba(20,16,31,0)", "rgba(20,16,31,0.85)"]);
   const border = useTransform(scrollY, [0, 120], ["rgba(74,63,99,0)", "rgba(74,63,99,0.6)"]);
 
+  // Desktop: the nav stays hidden during the black cinematic intro and slides
+  // in when the site "reveals" (past ~1.15 viewport heights of scroll).
+  const [revealed, setRevealed] = useState(false);
+  useEffect(() => {
+    const onScroll = () =>
+      setRevealed(window.scrollY > window.innerHeight * 1.15);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const show = !isDesktop || revealed;
+
   return (
     <motion.header
-      style={{ backgroundColor: bg, borderColor: border }}
+      style={{
+        backgroundColor: bg,
+        borderColor: border,
+        pointerEvents: show ? "auto" : "none",
+      }}
       className="fixed inset-x-0 top-0 z-50 border-b backdrop-blur-md"
-      initial={{ y: -80, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.6, ease: "easeOut" }}
+      initial={false}
+      animate={{ y: show ? 0 : -80, opacity: show ? 1 : 0 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
     >
       <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
         <a href="/" className="flex items-center gap-2.5">

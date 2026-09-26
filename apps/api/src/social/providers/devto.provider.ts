@@ -55,6 +55,14 @@ export class DevtoProvider extends TokenProvider {
     const title =
       input.content.split("\n").find((line) => line.trim())?.slice(0, 80) ||
       "postN note";
+
+    const imageMarkdown = (input.mediaUrls ?? [])
+      .filter(Boolean)
+      .map((url) => `\n\n![image](${url})`)
+      .join("");
+    const bodyMarkdown = input.content + imageMarkdown;
+    const coverImage = input.mediaUrls?.[0] || undefined;
+
     const res = await fetch("https://dev.to/api/articles", {
       method: "POST",
       headers: {
@@ -65,8 +73,9 @@ export class DevtoProvider extends TokenProvider {
       body: JSON.stringify({
         article: {
           title,
-          body_markdown: input.content,
+          body_markdown: bodyMarkdown,
           published: false,
+          ...(coverImage ? { main_image: coverImage } : {}),
         },
       }),
     });

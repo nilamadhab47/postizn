@@ -50,12 +50,17 @@ export class DiscordProvider extends TokenProvider {
     accessToken: string;
     platformId: string;
   }) {
+    const embeds = (input.mediaUrls ?? [])
+      .filter(Boolean)
+      .map((url) => ({ image: { url } }));
+
     const res = await fetch(input.accessToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         content: input.content.slice(0, 2000),
         username: "postN",
+        ...(embeds.length ? { embeds } : {}),
       }),
     });
     if (res.status !== 204 && !res.ok) {

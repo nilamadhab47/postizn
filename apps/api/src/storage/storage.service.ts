@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
-  ListBucketsCommand,
+  DeleteObjectCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -20,7 +20,7 @@ export class StorageService implements OnModuleInit {
     return Boolean(this.client && this.bucket);
   }
 
-  async onModuleInit() {
+  onModuleInit() {
     const accessKeyId = this.config.get<string>("R2_ACCESS_KEY_ID")?.trim();
     const secretAccessKey = this.config.get<string>("R2_SECRET_ACCESS_KEY")?.trim();
     const accountId = this.config.get<string>("R2_ACCOUNT_ID")?.trim();
@@ -42,9 +42,9 @@ export class StorageService implements OnModuleInit {
       return;
     }
 
-    if (!endpoint) {
+    if (!endpoint || !this.bucket) {
       this.log.warn(
-        "R2 folder was not created. Add R2_ACCOUNT_ID (Cloudflare account id) or R2_ENDPOINT, then restart the API.",
+        "R2 needs R2_BUCKET plus R2_ACCOUNT_ID or R2_ENDPOINT. Copy Account ID from the R2 dashboard sidebar.",
       );
       return;
     }
@@ -52,22 +52,13 @@ export class StorageService implements OnModuleInit {
     this.client = new S3Client({
       region: "auto",
       endpoint,
+      forcePathStyle: true,
       credentials: { accessKeyId, secretAccessKey },
       requestChecksumCalculation: "WHEN_REQUIRED",
       responseChecksumValidation: "WHEN_REQUIRED",
     });
 
-    if (!this.bucket) {
-      const listed = await this.client.send(new ListBucketsCommand({}));
-      this.bucket = listed.Buckets?.[0]?.Name ?? "";
-    }
-
-    if (!this.bucket) {
-      this.log.warn("R2_BUCKET is empty and no buckets were listed");
-      return;
-    }
-
-    await this.ensureFolder();
+    this.log.log(`R2 client ready for bucket ${this.bucket} (${this.prefix}/)`);
   }
 
   objectKey(name: string) {
@@ -78,36 +69,36 @@ export class StorageService implements OnModuleInit {
     return this.publicUrl ? `${this.publicUrl}/${key}` : key;
   }
 
-  async ensureFolder() {
-    if (!this.client || !this.bucket) return;
-
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: `${this.prefix}/.keep`,
-        Body: Buffer.from(""),
-        ContentType: "text/plain",
-      }),
-    );
-
-    this.log.log(`R2 folder ready at ${this.prefix}/`);
-  }
-
   async putObject(name: string, body: Buffer, contentType: string) {
     if (!this.client || !this.bucket) {
       throw new Error("R2 is not configured");
     }
 
     const key = this.objectKey(name);
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: body,
-        ContentType: contentType,
-      }),
-    );
+    try {
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Body: body,
+          ContentType: contentType,
+        }),
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "R2 upload failed";
+      this.log.error(`PutObject ${key}: ${message}`);
+      throw new Error(
+        `R2 upload failed (${message}). Confirm Account ID, bucket longhand, and that the r2.dev public URL is enabled.`,
+      );
+    }
 
     return { key, url: this.publicObjectUrl(key) };
+  }
+
+  async deleteObject(key: string) {
+    if (!this.client || !this.bucket) return;
+    await this.client.send(
+      new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
   }
 }

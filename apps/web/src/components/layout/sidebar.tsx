@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { Suspense } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import { NotificationBell } from "@/components/layout/notification-bell";
 
 const primary = [
   { href: "/dashboard", label: "Home" },
@@ -41,6 +43,9 @@ export function Sidebar() {
       <nav className="flex flex-1 flex-col gap-6 px-3 py-4">
         <NavGroup links={primary} pathname={pathname} />
         <NavGroup links={secondary} pathname={pathname} />
+        <Suspense fallback={null}>
+          <NotificationBell />
+        </Suspense>
       </nav>
       <div className="border-t border-line p-4">
         <p className="truncate text-base font-bold">{user?.name ?? "Account"}</p>

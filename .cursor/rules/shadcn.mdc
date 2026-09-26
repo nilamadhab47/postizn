@@ -1,0 +1,27 @@
+---
+description: Use shadcn/ui for new frontend work; do not rewrite existing screens
+globs: apps/web/**/*.{tsx,ts,css}
+alwaysApply: false
+---
+
+# shadcn/ui (going forward)
+
+postN uses **shadcn/ui** (Base UI, Nova, Lucide) in `apps/web`. Config: `apps/web/components.json`. Components live in `apps/web/src/components/ui`.
+
+## New UI
+
+- Import from `@/components/ui/*` (Button, Input, Card, Dialog, Tabs, etc.).
+- Add missing pieces with `pnpm dlx shadcn@latest add <name> -c apps/web` — do not hand-roll a parallel primitive.
+- Icons: `lucide-react`. Class names: `cn()` from `@/lib/utils`.
+- Keep the postN dark gold theme (tokens in `globals.css`). Do not reset `:root` to Nova light defaults.
+
+## Do not rewrite
+
+Leave existing screens and hand-rolled buttons as they are unless the user asks to migrate them. Compose, sidebar, calendar, posts, settings, channels — no drive-by shadcn swaps.
+
+```tsx
+import { Button } from "@/components/ui/button"
+
+<Button>Save</Button>
+<Button variant="outline">Cancel</Button>
+```

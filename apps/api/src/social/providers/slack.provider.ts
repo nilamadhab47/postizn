@@ -63,6 +63,10 @@ export class SlackProvider extends TokenProvider {
     accessToken: string;
     platformId: string;
   }) {
+    const imageBlocks = (input.mediaUrls ?? [])
+      .filter(Boolean)
+      .map((url) => ({ type: "image" as const, image_url: url, alt_text: "postN image" }));
+
     const res = await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
       headers: {
@@ -72,6 +76,14 @@ export class SlackProvider extends TokenProvider {
       body: JSON.stringify({
         channel: input.platformId,
         text: input.content.slice(0, 40000),
+        ...(imageBlocks.length
+          ? {
+              blocks: [
+                { type: "section", text: { type: "mrkdwn", text: input.content.slice(0, 3000) } },
+                ...imageBlocks,
+              ],
+            }
+          : {}),
       }),
     });
     const json = (await readJson(res)) as {

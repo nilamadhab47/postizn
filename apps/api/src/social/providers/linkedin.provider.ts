@@ -9,6 +9,7 @@ const AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization";
 const TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken";
 const USERINFO_URL = "https://api.linkedin.com/v2/userinfo";
 const POSTS_URL = "https://api.linkedin.com/rest/posts";
+const IMAGES_URL = "https://api.linkedin.com/rest/images?action=initializeUpload";
 const MEMBER_SCOPES = ["openid", "profile", "email", "w_member_social"];
 export const LINKEDIN_VERSION = "202609";
 
@@ -86,12 +87,26 @@ export class LinkedinProvider extends BaseProvider {
     accessToken: string;
     platformId: string;
   }) {
+    let mediaContent: Record<string, unknown> = {};
+
+    const imageUrl = input.mediaUrls[0];
+    if (imageUrl) {
+      const imageUrn = await this.uploadImage(
+        input.accessToken,
+        input.platformId,
+        imageUrl,
+      );
+      if (imageUrn) {
+        mediaContent = { content: { media: { id: imageUrn } } };
+      }
+    }
+
     const res = await fetch(POSTS_URL, {
       method: "POST",
       headers: this.restHeaders(input.accessToken),
       body: JSON.stringify({
         author: this.authorUrn(input.platformId),
-        commentary: input.content,
+        commentary: escapeLinkedInText(input.content),
         visibility: "PUBLIC",
         distribution: {
           feedDistribution: "MAIN_FEED",
@@ -100,6 +115,7 @@ export class LinkedinProvider extends BaseProvider {
         },
         lifecycleState: "PUBLISHED",
         isReshareDisabledByAuthor: false,
+        ...mediaContent,
       }),
     });
 
@@ -117,6 +133,58 @@ export class LinkedinProvider extends BaseProvider {
 
     const postId = res.headers.get("x-restli-id") ?? `linkedin-${Date.now()}`;
     return { platformPostId: postId };
+  }
+
+  private async uploadImage(
+    accessToken: string,
+    platformId: string,
+    imageUrl: string,
+  ): Promise<string | null> {
+    const initRes = await fetch(IMAGES_URL, {
+      method: "POST",
+      headers: this.restHeaders(accessToken),
+      body: JSON.stringify({
+        initializeUploadRequest: {
+          owner: this.authorUrn(platformId),
+        },
+      }),
+    });
+    if (!initRes.ok) {
+      const msg = await initRes.text().catch(() => "");
+      throw new Error(
+        `LinkedIn image init failed (${initRes.status}): ${msg.slice(0, 200)}`,
+      );
+    }
+    const initJson = (await initRes.json()) as {
+      value?: { uploadUrl?: string; image?: string };
+    };
+    const uploadUrl = initJson.value?.uploadUrl;
+    const imageUrn = initJson.value?.image;
+    if (!uploadUrl || !imageUrn) {
+      throw new Error("LinkedIn image init returned no upload URL");
+    }
+
+    const imgRes = await fetch(imageUrl);
+    if (!imgRes.ok) {
+      throw new Error(`Could not fetch image from ${imageUrl}`);
+    }
+    const imgBuf = Buffer.from(await imgRes.arrayBuffer());
+    const contentType =
+      imgRes.headers.get("content-type") ?? "application/octet-stream";
+
+    const putRes = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": contentType,
+      },
+      body: imgBuf,
+    });
+    if (!putRes.ok && putRes.status !== 201) {
+      throw new Error(`LinkedIn image PUT failed (${putRes.status})`);
+    }
+
+    return imageUrn;
   }
 
   protected authScopes() {
@@ -253,4 +321,28 @@ function claimsFromIdToken(idToken?: string) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Escape special characters for LinkedIn's commentary field.
+ * LinkedIn treats certain chars as rich-text formatting tokens and silently
+ * truncates content at the first unescaped one.
+ */
+function escapeLinkedInText(text: string): string {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/</g, "\\<")
+    .replace(/>/g, "\\>")
+    .replace(/#/g, "\\#")
+    .replace(/~/g, "\\~")
+    .replace(/_/g, "\\_")
+    .replace(/\|/g, "\\|")
+    .replace(/\[/g, "\\[")
+    .replace(/]/g, "\\]")
+    .replace(/\*/g, "\\*")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)")
+    .replace(/\{/g, "\\{")
+    .replace(/}/g, "\\}")
+    .replace(/@/g, "\\@");
 }

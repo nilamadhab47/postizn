@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Platform } from "@prisma/client";
+import { Platform, type SocialAccount } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { decryptSecret, encryptSecret, keyFromSecret } from "./token-crypto";
 import { OauthStateStore } from "./oauth-state.store";
@@ -91,28 +91,72 @@ export class SocialService {
     if (!account) {
       throw new NotFoundException("Channel not found");
     }
-    if (account.isMock) {
-      throw new BadRequestException("Reconnect the live channel before sending a test");
-    }
-    const provider = this.registry.getByPlatform(account.platform);
-    if (!provider) {
-      throw new NotFoundException("Unknown platform");
-    }
-    const key = this.cryptoKey();
-    const accessToken = decryptSecret(account.accessToken, key);
     const text =
       (content?.trim() || `postN test · ${new Date().toISOString()}`).slice(0, 2000);
     try {
-      const result = await provider.publishPost({
-        content: text,
-        mediaUrls: [],
-        accessToken,
-        platformId: account.platformId,
-      });
+      const result = await this.publishToAccount(account, text, []);
       return { ok: true as const, platformPostId: result.platformPostId };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Publish failed";
       throw new BadRequestException(message);
+    }
+  }
+
+  async publishToAccount(
+    account: SocialAccount,
+    content: string,
+    mediaUrls: string[] = [],
+  ) {
+    if (account.isMock) {
+      throw new Error("Reconnect the live channel before publishing");
+    }
+    const ready = await this.ensureFreshAccount(account);
+    const provider = this.registry.getByPlatform(ready.platform);
+    if (!provider) {
+      throw new Error("Unknown platform");
+    }
+    const accessToken = decryptSecret(ready.accessToken, this.cryptoKey());
+    return provider.publishPost({
+      content,
+      mediaUrls,
+      accessToken,
+      platformId: ready.platformId,
+    });
+  }
+
+  private async ensureFreshAccount(account: SocialAccount): Promise<SocialAccount> {
+    const skewMs = 5 * 60 * 1000;
+    if (!account.tokenExpiry || account.tokenExpiry.getTime() > Date.now() + skewMs) {
+      return account;
+    }
+    const provider = this.registry.getByPlatform(account.platform);
+    if (!provider) {
+      throw new Error("Unknown platform");
+    }
+    if (provider.connectMode === "token") {
+      return account;
+    }
+    if (!account.refreshToken) {
+      throw new Error("Reconnect this channel — the login expired");
+    }
+    const key = this.cryptoKey();
+    const refresh = decryptSecret(account.refreshToken, key);
+    try {
+      const next = await provider.refreshToken(refresh);
+      return this.prisma.socialAccount.update({
+        where: { id: account.id },
+        data: {
+          accessToken: encryptSecret(next.accessToken, key),
+          refreshToken: next.refreshToken
+            ? encryptSecret(next.refreshToken, key)
+            : undefined,
+          tokenExpiry: next.tokenExpiry ?? null,
+        },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "refresh failed";
+      this.log.warn(`token refresh failed ${account.platform}: ${message}`);
+      throw new Error("Reconnect this channel — the login expired");
     }
   }
 

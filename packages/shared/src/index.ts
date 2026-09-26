@@ -13,6 +13,14 @@ export const PLATFORM_CHAR_LIMITS = {
   DISCORD: 2000,
 } as const;
 
+export function platformCharCount(platform: keyof typeof PLATFORM_CHAR_LIMITS, text: string) {
+  if (platform === "TWITTER") {
+    const weighted = text.replace(/https?:\/\/[^\s]+/gi, "x".repeat(23));
+    return Array.from(weighted).length;
+  }
+  return Array.from(text).length;
+}
+
 export const DEFAULT_TIMEZONE = "Asia/Kolkata";
 
 export type Plan = "FREE" | "PRO";
@@ -53,9 +61,19 @@ export type SocialAccount = {
   isMock: boolean;
 };
 
+export type PostTarget = {
+  id: string;
+  platform: Platform;
+  status: PostStatus;
+  platformPostId: string | null;
+  failedReason: string | null;
+  publishedAt: string | null;
+};
+
 export type Post = {
   id: string;
   content: string;
+  contentByPlatform: Record<string, string> | null;
   mediaUrls: string[];
   status: PostStatus;
   scheduledAt: string | null;
@@ -63,4 +81,5 @@ export type Post = {
   failedReason: string | null;
   aiGenerated: boolean;
   createdAt: string;
+  targets?: PostTarget[];
 };

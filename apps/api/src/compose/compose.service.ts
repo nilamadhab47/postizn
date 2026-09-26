@@ -71,9 +71,10 @@ Draft/topic:\n${seed}`;
         "Add GOOGLE_AI_API_KEY to apps/api/.env to generate images.",
       );
     }
-    const idea =
-      prompt.trim() ||
-      "Square product photo of a mango preserve jar on a packing table, warm warehouse light, India D2C, no text";
+    const idea = prompt.trim();
+    if (!idea) {
+      throw new BadRequestException("Describe the image you want.");
+    }
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${key}`,
       {

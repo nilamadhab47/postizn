@@ -17,7 +17,7 @@
 
 postN is a dark, IST-native scheduler. After login you land on **Home** (the pulse), not a calendar dump. **Calendar** is a time board with hour rows and a 7–10pm India peak. **Channels** is a live connect grid. **Compose** shows each network as it will look.
 
-POC is done: email/password login, live channel connect, and text publish on LinkedIn + X + Telegram + Slack + Discord + Dev.to. Draft → schedule → worker is next.
+POC is done: email/password login, live channel connect, drafts, Post now, and scheduled posts via a BullMQ worker on Redis.
 
 ## Screenshots
 
@@ -46,16 +46,18 @@ POC is done: email/password login, live channel connect, and text publish on Lin
 | LinkedIn personal + X OAuth | Live, FREE |
 | Telegram, Slack, Discord, Dev.to | Live, PRO (token) |
 | LinkedIn Page OAuth | Wired, PRO (needs Community Management to prove a Page post) |
-| Compose previews + Claude / Gemini | Live (compose does not persist yet) |
+| Compose previews + Claude / Gemini | Live |
+| Save draft / Schedule / Post now | Live (`POST /posts`) |
+| BullMQ delayed publish | Live (queue `publish-post`, Redis 6381) |
 | Medium | Unavailable — they no longer issue API tokens |
 
-New signups are **FREE** (2 channels). Founder demo is **PRO**. Razorpay, R2 image publish, and BullMQ scheduling are still ahead.
+New signups are **FREE** (2 channels). Founder demo is **PRO**. Razorpay and R2 image publish on LinkedIn/X are still ahead.
 
 ## Stack
 
 - Web: Next.js App Router + Tailwind (`apps/web`)
 - API: NestJS + Prisma + PostgreSQL (`apps/api`)
-- Queue: Redis + BullMQ (not wired yet)
+- Queue: Redis + BullMQ (`publish-post` delayed jobs, in-process worker)
 - Auth: Nest owns login. Google OAuth is parked. No NextAuth.
 - Media: Cloudflare R2. AI: Claude + Gemini. Payments: Razorpay (week 2).
 

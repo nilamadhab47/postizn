@@ -48,6 +48,8 @@ model User {
 
   socialAccounts SocialAccount[]
   posts          Post[]
+  media          Media[]
+  notifications  Notification[]
 }
 
 model SocialAccount {
@@ -89,8 +91,9 @@ model Post {
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
 
-  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  targets PostTarget[]
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targets       PostTarget[]
+  notification  Notification?
 
   @@index([userId, status])
   @@index([scheduledAt])
@@ -113,6 +116,44 @@ model PostTarget {
 
   @@index([postId])
   @@index([socialAccountId])
+}
+
+model Media {
+  id        String   @id @default(cuid())
+  userId    String
+  key       String   @unique
+  url       String
+  mimeType  String
+  fileName  String
+  bytes     Int
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Notification {
+  id        String            @id @default(cuid())
+  userId    String
+  postId    String            @unique
+  kind      NotificationKind
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+}
+
+enum NotificationKind {
+  PUBLISHED
+  FAILED
 }
 
 model Waitlist {

@@ -19,7 +19,7 @@ Key paths:
 
 ## Stack
 
-- Frontend: Next.js App Router + Tailwind (`apps/web`)
+- Frontend: Next.js App Router + Tailwind (`apps/web`). **New UI uses shadcn/ui** in `src/components/ui` — do not rewrite existing screens unless asked.
 - Backend: NestJS + Prisma + PostgreSQL (`apps/api`)
 - Queue: Redis + BullMQ (in-process worker, single replica)
 - Auth: NestJS owns login and social OAuth. Email/password is the current user login. Google OAuth is parked. No NextAuth.

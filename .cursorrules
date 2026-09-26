@@ -15,6 +15,7 @@ Use it to study patterns but NEVER copy code directly. Write fresh implementatio
 ## Our stack:
 - Product: postN
 - Frontend: Next.js App Router + Tailwind
+- UI: shadcn/ui going forward (`apps/web/src/components/ui`). Do not replace existing screens unless asked.
 - Backend: NestJS + Prisma + PostgreSQL
 - Queue: Redis + BullMQ
 - Media: Cloudflare R2

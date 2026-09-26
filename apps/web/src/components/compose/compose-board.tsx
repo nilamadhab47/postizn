@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { api, ApiError } from "@/lib/api";
@@ -16,6 +16,17 @@ import {
 } from "@/lib/compose-text";
 import { ChannelPreview } from "@/components/compose/preview-cards";
 import { Button } from "@/components/ui/button";
+import {
+  MEDIA_FILE_ACCEPT,
+  acceptedFiles,
+  isFileDrag,
+  mergePicked,
+  videoLengthError,
+  videoSeconds,
+  type ComposeMedia,
+} from "@/lib/compose-media";
+import { mediaBundleError, mediaKind } from "@postn/shared";
+import { IstDateTimePicker } from "@/components/compose/ist-datetime-picker";
 import {
   Dialog,
   DialogContent,
@@ -52,7 +63,7 @@ const PLACEHOLDERS: Record<string, string> = {
   TWITTER: "Short version for X. Stay under 280.",
   LINKEDIN: "Longer founder note for LinkedIn.",
   LINKEDIN_PAGE: "Company Page update. Sounds like the brand, not you.",
-  TELEGRAM: "Channel post for Telegram. Captions cap at 1,024 with a photo.",
+  TELEGRAM: "Channel post for Telegram. Captions cap at 1,024 with media.",
   SLACK: "Message for your Slack channel.",
   DISCORD: "Webhook message for Discord.",
   DEVTO: "First line is the title. Rest is the unpublished Dev.to article.",
@@ -86,7 +97,7 @@ export function ComposeBoard({
   const [tab, setTab] = useState<string>("all");
   const [globalDraft, setGlobalDraft] = useState("");
   const [overrides, setOverrides] = useState<Record<string, string>>({});
-  const [image, setImage] = useState<string | null>(null);
+  const [media, setMedia] = useState<ComposeMedia[]>([]);
   const [when, setWhen] = useState(toLocalInput(initialAt));
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [live, setLive] = useState<ProviderRow[]>([]);
@@ -102,6 +113,8 @@ export function ComposeBoard({
     null,
   );
   const [imageLeft, setImageLeft] = useState<number | null>(3);
+  const [fileOver, setFileOver] = useState(false);
+  const fileDragDepth = useRef(0);
 
   const name = user?.name || "Demo";
   const selectedRows = live.filter((row) => selected[row.platform]);
@@ -115,7 +128,7 @@ export function ComposeBoard({
         const count = platformCharCount(platform, body);
         const limit = PLATFORM_LIMITS[platform];
         const captionOver =
-          row.platform === "TELEGRAM" && Boolean(image) && count > TELEGRAM_CAPTION;
+          row.platform === "TELEGRAM" && media.length > 0 && count > TELEGRAM_CAPTION;
         return {
           platform: row.platform,
           label: row.label,
@@ -125,12 +138,18 @@ export function ComposeBoard({
           captionOver,
         };
       }),
-    [live, overrides, globalDraft, selected, image],
+    [live, overrides, globalDraft, selected, media],
   );
 
   const anyOver = counts.some((row) => row.over);
   const hour = when ? Number(when.slice(11, 13)) : new Date().getHours();
   const inPeak = hour >= 19 && hour <= 22;
+  const selectedPlatforms = selectedRows.map((row) => row.platform);
+  const mediaWarning = mediaBundleError(
+    media.map((item) => ({ ...item, bytes: 0 })),
+    selectedPlatforms,
+  );
+  const hasMedia = media.length > 0;
 
   useEffect(() => {
     void api<Catalog>("/social/channels")
@@ -160,7 +179,11 @@ export function ComposeBoard({
       .then((post) => {
         setGlobalDraft(post.content);
         setOverrides(post.contentByPlatform ?? {});
-        setImage(post.mediaUrls[0] ?? null);
+        setMedia(
+          (post.media ?? post.mediaUrls.map((url) => ({ url, mimeType: "image/jpeg" }))).map(
+            (item) => ({ url: item.url, mimeType: item.mimeType }),
+          ),
+        );
         if (post.scheduledAt) setWhen(toLocalInput(post.scheduledAt));
         const next: Record<string, boolean> = {};
         for (const target of post.targets) next[target.platform] = true;
@@ -273,11 +296,16 @@ export function ComposeBoard({
         },
       );
       setImageLeft(data.remaining);
-      const stored = await api<{ url: string }>("/media/data", {
+      const stored = await api<{ url: string; mimeType?: string }>("/media/data", {
         method: "POST",
         body: JSON.stringify({ dataUrl: data.dataUrl, fileName: "generated.png" }),
       });
-      setImage(stored.url);
+      const incoming: ComposeMedia[] = [
+        { url: stored.url, mimeType: stored.mimeType ?? "image/png" },
+      ];
+      const merged = mergePicked(media, incoming);
+      setMedia(merged.next);
+      if (merged.note) setBanner({ kind: "ok", text: merged.note });
       setImageOpen(false);
     } catch (err) {
       setImageError(
@@ -288,19 +316,87 @@ export function ComposeBoard({
     }
   }
 
-  async function onPickFile(file: File | undefined) {
-    if (!file) return;
+  function onEditorDragEnter(event: DragEvent<HTMLDivElement>) {
+    if (!isFileDrag(event) || busy) return;
+    event.preventDefault();
+    fileDragDepth.current += 1;
+    setFileOver(true);
+  }
+
+  function onEditorDragLeave(event: DragEvent<HTMLDivElement>) {
+    if (!isFileDrag(event)) return;
+    fileDragDepth.current = Math.max(0, fileDragDepth.current - 1);
+    if (fileDragDepth.current === 0) setFileOver(false);
+  }
+
+  function onEditorDragOver(event: DragEvent<HTMLDivElement>) {
+    if (!isFileDrag(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = busy ? "none" : "copy";
+  }
+
+  function onEditorDrop(event: DragEvent<HTMLDivElement>) {
+    if (!isFileDrag(event)) return;
+    event.preventDefault();
+    fileDragDepth.current = 0;
+    setFileOver(false);
+    if (busy) return;
+    const incoming = acceptedFiles(event.dataTransfer.files);
+    if (!incoming.length) {
+      setBanner({
+        kind: "err",
+        text: "Use a JPEG, PNG, WebP, GIF, or MP4",
+      });
+      return;
+    }
+    void onPickFiles(incoming);
+  }
+
+  async function onPickFiles(files: File[]) {
+    const incoming = acceptedFiles(files);
+    if (!incoming.length) {
+      setBanner({
+        kind: "err",
+        text: "Use a JPEG, PNG, WebP, GIF, or MP4",
+      });
+      return;
+    }
     setBusy("upload");
     setBanner(null);
+    const linkedInSelected = Boolean(selected.LINKEDIN || selected.LINKEDIN_PAGE);
+    const uploaded: ComposeMedia[] = [];
     try {
-      const body = new FormData();
-      body.append("file", file);
-      const stored = await api<{ url: string }>("/media", { method: "POST", body });
-      setImage(stored.url);
+      for (const file of incoming) {
+        if (file.type === "video/mp4") {
+          try {
+            const seconds = await videoSeconds(file);
+            const lengthError = videoLengthError(seconds, linkedInSelected);
+            if (lengthError) {
+              setBanner({ kind: "err", text: lengthError });
+              continue;
+            }
+          } catch {
+            setBanner({ kind: "err", text: "Could not read that video" });
+            continue;
+          }
+        }
+        const body = new FormData();
+        body.append("file", file);
+        const stored = await api<{ url: string; mimeType: string }>("/media", {
+          method: "POST",
+          body,
+        });
+        uploaded.push({ url: stored.url, mimeType: stored.mimeType });
+      }
+      if (uploaded.length) {
+        const merged = mergePicked(media, uploaded);
+        setMedia(merged.next);
+        if (merged.note) setBanner({ kind: "ok", text: merged.note });
+      }
     } catch (err) {
       setBanner({
         kind: "err",
-        text: err instanceof ApiError ? err.message : "Could not upload image",
+        text: err instanceof ApiError ? err.message : "Could not upload file",
       });
     } finally {
       setBusy(null);
@@ -326,6 +422,10 @@ export function ComposeBoard({
       setBanner({ kind: "err", text: "Pick an IST time first." });
       return;
     }
+    if (action !== "draft" && mediaWarning) {
+      setBanner({ kind: "err", text: mediaWarning });
+      return;
+    }
 
     const contentByPlatform: Record<string, string> = {};
     for (const row of rows) {
@@ -346,7 +446,7 @@ export function ComposeBoard({
           contentByPlatform,
           platforms: rows.map((row) => row.platform),
           scheduledAt: when ? new Date(when).toISOString() : null,
-          mediaUrls: image && image.startsWith("http") ? [image] : [],
+          mediaUrls: media.filter((item) => item.url.startsWith("http")).map((item) => item.url),
         }),
       });
       const nextStatus =
@@ -367,6 +467,10 @@ export function ComposeBoard({
     const rows = selectedRows.filter((row) => row.account);
     if (!rows.length) {
       setBanner({ kind: "err", text: "Connect and select a channel first." });
+      return;
+    }
+    if (mediaWarning) {
+      setBanner({ kind: "err", text: mediaWarning });
       return;
     }
     setConfirmNow(true);
@@ -400,15 +504,7 @@ export function ComposeBoard({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-2 rounded-xl border border-line bg-card px-3 py-2 text-sm font-semibold">
-            IST
-            <input
-              type="datetime-local"
-              value={when}
-              onChange={(e) => setWhen(e.target.value)}
-              className="bg-transparent text-sm outline-none"
-            />
-          </label>
+          <IstDateTimePicker value={when} onChange={setWhen} />
           <span
             className={`hidden rounded-lg px-2 py-1 text-[11px] font-extrabold uppercase tracking-wide md:inline ${
               inPeak ? "bg-accent/15 text-accent" : "bg-today/10 text-today"
@@ -420,7 +516,21 @@ export function ComposeBoard({
       </header>
 
       <div className="grid min-h-0 flex-1 gap-0 overflow-hidden lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-        <section className="min-h-0 overflow-y-auto p-5">
+        <section
+          className="relative min-h-0 overflow-y-auto p-5"
+          onDragEnter={onEditorDragEnter}
+          onDragLeave={onEditorDragLeave}
+          onDragOver={onEditorDragOver}
+          onDrop={onEditorDrop}
+        >
+          {fileOver ? (
+            <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-background/80 px-6">
+              <p className="rounded-xl border border-accent bg-card px-4 py-3 text-center text-sm font-bold text-accent">
+                Drop photos or an MP4 here. Schedule still uses the IST time
+                above.
+              </p>
+            </div>
+          ) : null}
           <div className="mb-4 flex flex-wrap gap-2">
             {live.map((row) => (
               <ChannelChip
@@ -473,12 +583,17 @@ export function ComposeBoard({
               </span>
               <span className="mx-1 h-5 w-px bg-line" />
               <label className="cursor-pointer rounded-lg px-2 py-1 text-sm font-semibold hover:bg-background">
-                Add image{busy === "upload" ? "…" : ""}
+                Add photos or video{busy === "upload" ? "…" : ""}
                 <input
                   type="file"
-                  accept="image/*"
+                  accept={MEDIA_FILE_ACCEPT}
+                  multiple
                   className="hidden"
-                  onChange={(e) => onPickFile(e.target.files?.[0])}
+                  onChange={(e) => {
+                    const list = e.target.files ? Array.from(e.target.files) : [];
+                    e.target.value = "";
+                    void onPickFiles(list);
+                  }}
                 />
               </label>
               <button
@@ -492,13 +607,13 @@ export function ComposeBoard({
                   {user?.plan === "PRO" ? "PRO" : `${imageLeft ?? 0} test`}
                 </span>
               </button>
-              {image ? (
+              {hasMedia ? (
                 <button
                   type="button"
-                  onClick={() => setImage(null)}
+                  onClick={() => setMedia([])}
                   className="text-xs font-semibold text-muted hover:text-today"
                 >
-                  Remove
+                  Remove all
                 </button>
               ) : null}
             </div>
@@ -506,32 +621,64 @@ export function ComposeBoard({
               ref={area}
               value={activeValue}
               onChange={(e) => setActive(e.target.value)}
-              rows={image ? 3 : 10}
+              rows={hasMedia ? 3 : 10}
               placeholder={
                 PLACEHOLDERS[tab] ||
                 "Write once. We’ll show every selected feed on the right."
               }
               className={`w-full resize-y bg-transparent px-4 pt-3 text-base leading-relaxed outline-none placeholder:text-muted ${
-                image ? "min-h-[72px] pb-2" : "min-h-[220px] pb-3"
+                hasMedia ? "min-h-[72px] pb-2" : "min-h-[180px] pb-3"
               }`}
             />
-            {image ? (
+            {!hasMedia ? (
+              <p className="mx-4 mb-3 rounded-xl border border-dashed border-line px-3 py-5 text-center text-sm font-semibold text-muted">
+                Drop photos or an MP4 here, then Schedule or Post now.
+              </p>
+            ) : null}
+            {hasMedia ? (
               <div className="px-4 pb-3">
-                <div className="relative max-w-md overflow-hidden rounded-xl border border-line">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={image}
-                    alt="Attached to this post"
-                    className="max-h-52 w-full object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setImage(null)}
-                    className="absolute right-2 top-2 rounded-lg bg-background/90 px-2 py-1 text-xs font-bold hover:bg-today hover:text-white"
-                  >
-                    Remove
-                  </button>
+                <div
+                  className={`grid gap-2 ${
+                    media.length === 1 ? "max-w-md grid-cols-1" : "grid-cols-2 max-w-lg"
+                  }`}
+                >
+                  {media.map((item) => (
+                    <div
+                      key={item.url}
+                      className="relative overflow-hidden rounded-xl border border-line"
+                    >
+                      {mediaKind(item.mimeType) === "video" ? (
+                        <video
+                          src={item.url}
+                          className="max-h-52 w-full object-cover"
+                          controls
+                          playsInline
+                          muted
+                        />
+                      ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={item.url}
+                          alt="Attached to this post"
+                          className="max-h-52 w-full object-cover"
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setMedia((prev) => prev.filter((row) => row.url !== item.url))
+                        }
+                        className="absolute right-2 top-2 rounded-lg bg-background/90 px-2 py-1 text-xs font-bold hover:bg-today hover:text-white"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
                 </div>
+                <p className="mt-2 text-[11px] font-semibold text-muted">
+                  Drop files here or click Add. Up to 4 photos, or one GIF, or
+                  one MP4 (max 50 MB, 2:20). Slack and Dev.to skip video.
+                </p>
               </div>
             ) : null}
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2 text-[12px] font-bold">
@@ -545,7 +692,7 @@ export function ComposeBoard({
                       className={stat.over ? "text-today" : "text-muted"}
                     >
                       {row.label} {stat.count.toLocaleString("en-IN")} /{" "}
-                      {(row.platform === "TELEGRAM" && image
+                      {(row.platform === "TELEGRAM" && hasMedia
                         ? TELEGRAM_CAPTION
                         : stat.limit
                       ).toLocaleString("en-IN")}
@@ -592,6 +739,12 @@ export function ComposeBoard({
             </button>
           </div>
 
+          {mediaWarning ? (
+            <p className="mt-3 rounded-xl border border-today/40 bg-today/10 px-3 py-2 text-sm font-semibold text-today">
+              {mediaWarning}
+            </p>
+          ) : null}
+
           {banner ? (
             <p
               className={`mt-3 rounded-xl border px-3 py-2 text-sm font-semibold ${
@@ -636,7 +789,7 @@ export function ComposeBoard({
               </button>
               <button
                 type="button"
-                disabled={anyOver || noneSelected || locked}
+                disabled={anyOver || Boolean(mediaWarning) || noneSelected || locked}
                 aria-busy={busy === "schedule"}
                 onClick={() => void submit("schedule")}
                 className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-accent-fg disabled:cursor-wait disabled:opacity-40"
@@ -646,7 +799,7 @@ export function ComposeBoard({
               </button>
               <button
                 type="button"
-                disabled={anyOver || noneSelected || locked}
+                disabled={anyOver || Boolean(mediaWarning) || noneSelected || locked}
                 aria-busy={busy === "now"}
                 onClick={requestPostNow}
                 className="inline-flex items-center gap-2 rounded-xl border border-line px-4 py-2.5 text-sm font-semibold disabled:cursor-wait disabled:opacity-40"
@@ -696,7 +849,7 @@ export function ComposeBoard({
                     handle={account?.username || row.slug}
                     avatar={account?.avatar ?? null}
                     body={body}
-                    image={image}
+                    media={media}
                     when={whenLabel}
                   />
                 </button>
@@ -947,6 +1100,7 @@ type SavedPost = {
   content: string;
   contentByPlatform: Record<string, string> | null;
   mediaUrls: string[];
+  media?: Array<{ url: string; mimeType: string }>;
   status: string;
   scheduledAt: string | null;
   failedReason: string | null;

@@ -1,7 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import { Platform } from "@prisma/client";
-import type { AuthResult } from "./base-provider";
+import { MAX_DISCORD_FILE_BYTES, mediaKind } from "@postn/shared";
+import type { AuthResult, PublishInput } from "./base-provider";
 import { TokenProvider, field, readJson } from "./token-provider";
+import { fetchRemoteFile, itemsFromPublish } from "./fetch-media";
 
 @Injectable()
 export class DiscordProvider extends TokenProvider {
@@ -44,15 +46,43 @@ export class DiscordProvider extends TokenProvider {
     };
   }
 
-  async publishPost(input: {
-    content: string;
-    mediaUrls: string[];
-    accessToken: string;
-    platformId: string;
-  }) {
-    const embeds = (input.mediaUrls ?? [])
-      .filter(Boolean)
-      .map((url) => ({ image: { url } }));
+  async publishPost(input: PublishInput) {
+    const items = itemsFromPublish(input);
+    const video = items.find((item) => mediaKind(item.mimeType) === "video");
+    if (video) {
+      if (video.bytes > MAX_DISCORD_FILE_BYTES) {
+        throw new Error("Discord webhooks only take files under 25 MB");
+      }
+      const file = await fetchRemoteFile(video.url);
+      if (file.buffer.length > MAX_DISCORD_FILE_BYTES) {
+        throw new Error("Discord webhooks only take files under 25 MB");
+      }
+      const form = new FormData();
+      form.set(
+        "payload_json",
+        JSON.stringify({
+          content: input.content.slice(0, 2000),
+          username: "postN",
+        }),
+      );
+      form.set(
+        "files[0]",
+        new Blob([new Uint8Array(file.buffer)], {
+          type: file.mimeType || "video/mp4",
+        }),
+        "video.mp4",
+      );
+      const res = await fetch(input.accessToken, { method: "POST", body: form });
+      if (res.status !== 204 && !res.ok) {
+        const json = await readJson(res);
+        throw new Error(
+          typeof json.message === "string" ? json.message : "Discord publish failed",
+        );
+      }
+      return { platformPostId: `discord-${input.platformId}-${Date.now()}` };
+    }
+
+    const embeds = items.filter(Boolean).map((item) => ({ image: { url: item.url } }));
 
     const res = await fetch(input.accessToken, {
       method: "POST",

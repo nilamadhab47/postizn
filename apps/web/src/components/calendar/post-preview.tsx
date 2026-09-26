@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { composeHref, hourLabel } from "@/lib/calendar";
-import type { CalPlatform, CalPost, CalPostStatus } from "@/lib/sample-calendar-posts";
+import type { CalPlatform, CalPost, CalPostStatus } from "@/lib/calendar-posts";
+import { ChannelIcon } from "@/components/accounts/channel-icons";
+import { channelLabel, platformSlug } from "@/lib/platforms";
+import {
+  PLATFORM_LIMITS,
+  platformCharCount,
+  type ComposePlatform,
+} from "@/lib/compose-text";
+import { mediaKind } from "@postn/shared";
 
 const STAMP: Record<CalPostStatus, string> = {
   published: "Posted",
@@ -31,36 +39,64 @@ const PILL: Record<CalPostStatus, string> = {
 
 export function PlatformMark({ platform }: { platform: CalPlatform }) {
   return (
-    <span
-      className={`rounded px-1 text-[9px] font-extrabold ${
-        platform === "linkedin"
-          ? "bg-[#7aa2ff] text-[#0b1a3a]"
-          : "bg-foreground text-background"
-      }`}
-    >
-      {platform === "linkedin" ? "in" : "X"}
-    </span>
+    <ChannelIcon
+      slug={platformSlug(platform)}
+      className="size-4 rounded-md"
+    />
   );
 }
 
 export function PostCard({
   post,
   compact,
+  dimmed,
   onOpen,
+  onMoveStart,
+  onMoveEnd,
 }: {
   post: CalPost;
   compact?: boolean;
+  dimmed?: boolean;
   onOpen: (post: CalPost) => void;
+  onMoveStart?: (post: CalPost) => void;
+  onMoveEnd?: () => void;
 }) {
+  const skipClick = useRef(false);
+
   return (
     <button
       type="button"
+      draggable={post.canMove}
+      title={
+        post.canMove
+          ? "Drag to another day or hour to reschedule"
+          : undefined
+      }
+      onDragStart={(event) => {
+        if (!post.canMove) {
+          event.preventDefault();
+          return;
+        }
+        skipClick.current = true;
+        event.dataTransfer.setData("text/plain", post.id);
+        event.dataTransfer.effectAllowed = "move";
+        onMoveStart?.(post);
+      }}
+      onDragEnd={() => {
+        onMoveEnd?.();
+        window.setTimeout(() => {
+          skipClick.current = false;
+        }, 80);
+      }}
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
+        if (skipClick.current) return;
         onOpen(post);
       }}
-      className={`flex h-full min-h-0 w-full overflow-hidden rounded-xl text-left shadow-[0_8px_18px_-12px_rgba(0,0,0,0.7)] ${TONE[post.status]}`}
+      className={`flex h-full min-h-0 w-full overflow-hidden rounded-xl text-left shadow-[0_8px_18px_-12px_rgba(0,0,0,0.7)] ${TONE[post.status]} ${
+        post.canMove ? "cursor-grab active:cursor-grabbing" : ""
+      } ${dimmed ? "opacity-40" : ""}`}
     >
       <i className={`w-1.5 shrink-0 ${BAR[post.status]}`} />
       <div className="flex min-w-0 flex-1 flex-col justify-center px-2 py-1">
@@ -86,15 +122,29 @@ export function PostCard({
 
 export function HourCluster({
   posts,
+  movingId,
   onOpen,
   onOpenHour,
+  onMoveStart,
+  onMoveEnd,
 }: {
   posts: CalPost[];
+  movingId?: string | null;
   onOpen: (post: CalPost, queue: CalPost[]) => void;
   onOpenHour: (posts: CalPost[]) => void;
+  onMoveStart?: (post: CalPost) => void;
+  onMoveEnd?: () => void;
 }) {
   if (posts.length === 1) {
-    return <PostCard post={posts[0]} onOpen={(post) => onOpen(post, posts)} />;
+    return (
+      <PostCard
+        post={posts[0]}
+        dimmed={movingId === posts[0].id}
+        onOpen={(post) => onOpen(post, posts)}
+        onMoveStart={onMoveStart}
+        onMoveEnd={onMoveEnd}
+      />
+    );
   }
 
   if (posts.length === 2) {
@@ -105,7 +155,10 @@ export function HourCluster({
             key={post.id}
             post={post}
             compact
+            dimmed={movingId === post.id}
             onOpen={(item) => onOpen(item, posts)}
+            onMoveStart={onMoveStart}
+            onMoveEnd={onMoveEnd}
           />
         ))}
       </div>
@@ -116,7 +169,14 @@ export function HourCluster({
   return (
     <div className="flex h-full flex-col gap-1">
       <div className="min-h-0 flex-1">
-        <PostCard post={posts[0]} compact onOpen={(post) => onOpen(post, posts)} />
+        <PostCard
+          post={posts[0]}
+          compact
+          dimmed={movingId === posts[0].id}
+          onOpen={(post) => onOpen(post, posts)}
+          onMoveStart={onMoveStart}
+          onMoveEnd={onMoveEnd}
+        />
       </div>
       <button
         type="button"
@@ -270,7 +330,7 @@ export function PostModal({
               {post.title}
             </h2>
             <p className="mt-1 text-sm font-semibold text-muted">
-              @{post.account}
+              {post.account}
             </p>
           </div>
           <CloseButton onClick={onClose} />
@@ -284,12 +344,10 @@ export function PostModal({
           ) : null}
 
           <div className="grid gap-4 sm:grid-cols-[160px_1fr]">
-            <div className="flex aspect-square items-end rounded-2xl bg-gradient-to-br from-accent/80 via-accent-2/70 to-[#1a1428] p-3">
-              <p className="text-[11px] font-extrabold uppercase tracking-wide text-accent-fg">
-                {post.media ?? "Text only"}
-              </p>
-            </div>
-            <p className="text-base leading-relaxed text-foreground">{post.body}</p>
+            <MediaTile post={post} />
+            <p className="whitespace-pre-wrap text-base leading-relaxed text-foreground">
+              {post.body || "No text on this post."}
+            </p>
           </div>
 
           {metrics ? (
@@ -322,26 +380,36 @@ export function PostModal({
           ) : null}
 
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            {post.platforms.map((platform) => (
-              <div
-                key={platform}
-                className="rounded-2xl border border-line bg-background/70 p-3"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-extrabold uppercase tracking-wide text-muted">
-                    {platform === "linkedin" ? "LinkedIn" : "X"} preview
-                  </span>
-                  <PlatformMark platform={platform} />
+            {post.platforms.map((platform) => {
+              const limit =
+                PLATFORM_LIMITS[platform as ComposePlatform] ??
+                PLATFORM_LIMITS.LINKEDIN;
+              const count = platformCharCount(
+                (platform in PLATFORM_LIMITS
+                  ? platform
+                  : "LINKEDIN") as ComposePlatform,
+                post.body,
+              );
+              return (
+                <div
+                  key={platform}
+                  className="rounded-2xl border border-line bg-background/70 p-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-extrabold uppercase tracking-wide text-muted">
+                      {channelLabel(platform)}
+                    </span>
+                    <PlatformMark platform={platform} />
+                  </div>
+                  <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-sm leading-snug">
+                    {post.body || "No text"}
+                  </p>
+                  <p className="mt-2 text-[11px] font-bold text-muted">
+                    {count.toLocaleString("en-IN")} / {limit.toLocaleString("en-IN")}
+                  </p>
                 </div>
-                <p className="mt-2 line-clamp-4 text-sm leading-snug">
-                  {post.body}
-                </p>
-                <p className="mt-2 text-[11px] font-bold text-muted">
-                  {post.body.length}/
-                  {platform === "linkedin" ? 3000 : 280}
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -370,36 +438,66 @@ export function PostModal({
                 </button>
               </>
             ) : (
-              <span className="text-xs font-semibold text-muted">Sample preview</span>
+              <span className="text-xs font-semibold text-muted">
+                {post.canMove
+                  ? "Drag this chip to another day or hour to reschedule"
+                  : post.status === "scheduled"
+                    ? "Queued in IST"
+                    : "From your queue"}
+              </span>
             )}
           </div>
           <div className="flex flex-wrap gap-2">
             {post.status === "failed" ? (
-              <button
-                type="button"
+              <Link
+                href={`/compose?post=${post.id}`}
                 className="rounded-xl bg-today px-3 py-2 text-sm font-bold text-white"
               >
                 Retry
-              </button>
-            ) : null}
-            {post.status === "scheduled" ? (
-              <button
-                type="button"
-                className="rounded-xl border border-line px-3 py-2 text-sm font-semibold"
+              </Link>
+            ) : (
+              <Link
+                href={`/compose?post=${post.id}`}
+                className="rounded-xl bg-accent px-3 py-2 text-sm font-bold text-accent-fg"
               >
-                Cancel
-              </button>
-            ) : null}
-            <Link
-              href={composeHref(post.day, post.hour)}
-              className="rounded-xl bg-accent px-3 py-2 text-sm font-bold text-accent-fg"
-            >
-              {post.status === "published" ? "Duplicate" : "Edit"}
-            </Link>
+                {post.status === "published" ? "Duplicate" : "Edit"}
+              </Link>
+            )}
           </div>
         </footer>
       </div>
     </Overlay>
+  );
+}
+
+function MediaTile({ post }: { post: CalPost }) {
+  if (post.mediaUrl && mediaKind(post.mediaMime ?? "") === "video") {
+    return (
+      <video
+        src={post.mediaUrl}
+        className="aspect-square w-full rounded-2xl object-cover"
+        muted
+        playsInline
+        controls
+      />
+    );
+  }
+  if (post.mediaUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={post.mediaUrl}
+        alt=""
+        className="aspect-square w-full rounded-2xl object-cover"
+      />
+    );
+  }
+  return (
+    <div className="flex aspect-square items-end rounded-2xl bg-gradient-to-br from-accent/80 via-accent-2/70 to-[#1a1428] p-3">
+      <p className="text-[11px] font-extrabold uppercase tracking-wide text-accent-fg">
+        {post.media ?? "Text only"}
+      </p>
+    </div>
   );
 }
 

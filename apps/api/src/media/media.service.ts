@@ -4,17 +4,25 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import {
+  MAX_VIDEO_BYTES,
+  guessMimeFromUrl,
+  maxBytesForKind,
+  mediaKind,
+  type MediaRef,
+} from "@postn/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 
-const MAX_BYTES = 8 * 1024 * 1024;
-const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const EXT: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
   "image/gif": "gif",
+  "video/mp4": "mp4",
 };
+
+export const UPLOAD_MAX_BYTES = MAX_VIDEO_BYTES;
 
 @Injectable()
 export class MediaService {
@@ -55,20 +63,43 @@ export class MediaService {
 
   async remove(userId: string, id: string) {
     const row = await this.prisma.media.findFirst({ where: { id, userId } });
-    if (!row) throw new NotFoundException("Image not found");
+    if (!row) throw new NotFoundException("File not found");
     await this.storage.deleteObject(row.key);
     await this.prisma.media.delete({ where: { id: row.id } });
     return { ok: true };
   }
 
-  async urlsForUser(userId: string, urls: string[]) {
+  async ownedForUser(userId: string, urls: string[]): Promise<MediaRef[]> {
+    if (!urls.length) return [];
+    const unique = [...new Set(urls)];
+    const rows = await this.prisma.media.findMany({
+      where: { userId, url: { in: unique } },
+      select: { url: true, mimeType: true, bytes: true },
+    });
+    const byUrl = new Map(rows.map((row) => [row.url, row]));
+    return urls
+      .filter((url) => byUrl.has(url))
+      .map((url) => {
+        const row = byUrl.get(url)!;
+        return { url: row.url, mimeType: row.mimeType, bytes: row.bytes };
+      });
+  }
+
+  async hydrate(userId: string, urls: string[]): Promise<MediaRef[]> {
     if (!urls.length) return [];
     const rows = await this.prisma.media.findMany({
       where: { userId, url: { in: urls } },
-      select: { url: true },
+      select: { url: true, mimeType: true, bytes: true },
     });
-    const allowed = new Set(rows.map((row) => row.url));
-    return urls.filter((url) => allowed.has(url));
+    const byUrl = new Map(rows.map((row) => [row.url, row]));
+    return urls.map((url) => {
+      const row = byUrl.get(url);
+      return {
+        url,
+        mimeType: row?.mimeType ?? guessMimeFromUrl(url),
+        bytes: row?.bytes ?? 0,
+      };
+    });
   }
 
   private async save(
@@ -81,14 +112,17 @@ export class MediaService {
     if (!this.storage.isConfigured()) {
       throw new BadRequestException("R2 is not configured. Add account id, bucket, and keys, then restart the API.");
     }
-    if (!ALLOWED.has(mimeType)) {
-      throw new BadRequestException("Use JPEG, PNG, WebP, or GIF");
+    const kind = mediaKind(mimeType);
+    if (!kind) {
+      throw new BadRequestException("Use JPEG, PNG, WebP, GIF, or MP4");
     }
-    if (bytes > MAX_BYTES) {
-      throw new BadRequestException("Image must be under 8 MB");
+    const cap = maxBytesForKind(kind);
+    if (bytes > cap) {
+      throw new BadRequestException(sizeMessage(kind, cap));
     }
     const ext = EXT[mimeType] ?? "bin";
-    const safe = originalName.replace(/[^\w.-]+/g, "_").slice(0, 80) || `image.${ext}`;
+    const fallback = kind === "video" ? `video.${ext}` : `image.${ext}`;
+    const safe = originalName.replace(/[^\w.-]+/g, "_").slice(0, 80) || fallback;
     const keyName = `${userId}/${randomUUID()}-${safe.endsWith(`.${ext}`) ? safe : `${safe}.${ext}`}`;
     let stored: { key: string; url: string };
     try {
@@ -108,6 +142,13 @@ export class MediaService {
     });
     return present(row);
   }
+}
+
+function sizeMessage(kind: "image" | "gif" | "video", cap: number) {
+  const mb = Math.round(cap / (1024 * 1024));
+  if (kind === "video") return `Video must be under ${mb} MB`;
+  if (kind === "gif") return `GIF must be under ${mb} MB`;
+  return `Photo must be under ${mb} MB`;
 }
 
 function present(row: {

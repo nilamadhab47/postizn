@@ -29,6 +29,7 @@ type QueuePost = {
   id: string;
   content: string;
   mediaUrls: string[];
+  media?: Array<{ url: string; mimeType: string }>;
   status: string;
   scheduledAt: string | null;
   publishedAt: string | null;
@@ -202,12 +203,22 @@ function QueuePanel() {
                   className="flex gap-4 rounded-2xl border border-line bg-card p-4 hover:border-accent"
                 >
                   {post.mediaUrls[0] ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={post.mediaUrls[0]}
-                      alt=""
-                      className="size-20 shrink-0 rounded-xl object-cover"
-                    />
+                    /\.mp4(\?|$)/i.test(post.mediaUrls[0]) ||
+                    post.media?.[0]?.mimeType?.startsWith("video/") ? (
+                      <video
+                        src={post.mediaUrls[0]}
+                        className="size-20 shrink-0 rounded-xl object-cover"
+                        muted
+                        playsInline
+                      />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={post.mediaUrls[0]}
+                        alt=""
+                        className="size-20 shrink-0 rounded-xl object-cover"
+                      />
+                    )
                   ) : null}
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">

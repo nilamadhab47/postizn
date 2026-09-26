@@ -14,7 +14,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { memoryStorage } from "multer";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser, type JwtUser } from "../auth/current-user.decorator";
-import { MediaService } from "./media.service";
+import { MediaService, UPLOAD_MAX_BYTES } from "./media.service";
 
 @Controller("media")
 @UseGuards(JwtAuthGuard)
@@ -30,7 +30,7 @@ export class MediaController {
   @UseInterceptors(
     FileInterceptor("file", {
       storage: memoryStorage(),
-      limits: { fileSize: 8 * 1024 * 1024 },
+      limits: { fileSize: UPLOAD_MAX_BYTES },
     }),
   )
   upload(
@@ -39,7 +39,7 @@ export class MediaController {
     file?: { buffer: Buffer; mimetype: string; originalname: string; size: number },
   ) {
     if (!file?.buffer) {
-      throw new BadRequestException("Choose an image");
+      throw new BadRequestException("Choose a photo, GIF, or MP4");
     }
     return this.media.uploadFile(user.userId, file);
   }

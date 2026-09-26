@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { AppHeader } from "@/components/layout/app-header";
+import { mediaKind } from "@postn/shared";
 
 type Target = {
   platform: string;
@@ -16,6 +17,7 @@ type SavedPost = {
   id: string;
   content: string;
   mediaUrls: string[];
+  media?: Array<{ url: string; mimeType: string }>;
   status: string;
   scheduledAt: string | null;
   publishedAt: string | null;
@@ -109,11 +111,9 @@ export function PostsBoard() {
                   className="flex gap-4 rounded-2xl border border-line bg-card p-4 hover:border-accent"
                 >
                   {post.mediaUrls[0] ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={post.mediaUrls[0]}
-                      alt=""
-                      className="size-20 shrink-0 rounded-xl object-cover"
+                    <PostThumb
+                      url={post.media?.[0]?.url ?? post.mediaUrls[0]}
+                      mimeType={post.media?.[0]?.mimeType}
                     />
                   ) : null}
                   <div className="min-w-0 flex-1">
@@ -158,6 +158,23 @@ function whenCopy(post: SavedPost) {
   if (post.status === "SCHEDULED") return `Queued · ${stamp}`;
   if (post.status === "PUBLISHING") return `Sending · ${stamp}`;
   return stamp;
+}
+
+function PostThumb({ url, mimeType }: { url: string; mimeType?: string }) {
+  if (mediaKind(mimeType ?? "") === "video" || /\.mp4(\?|$)/i.test(url)) {
+    return (
+      <video
+        src={url}
+        className="size-20 shrink-0 rounded-xl object-cover"
+        muted
+        playsInline
+      />
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={url} alt="" className="size-20 shrink-0 rounded-xl object-cover" />
+  );
 }
 
 function platformLabel(target: Target) {

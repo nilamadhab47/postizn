@@ -1,7 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Platform } from "@prisma/client";
-import { BaseProvider, type AuthResult, type UploadInput } from "./base-provider";
+import { BaseProvider, type AuthResult, type PublishInput, type UploadInput } from "./base-provider";
+import { fetchRemoteFile, firstKind, itemsFromPublish } from "./fetch-media";
 import { challenge, expiryFromSeconds, hasKey } from "./pkce";
 
 const AUTH_URL = "https://twitter.com/i/oauth2/authorize";
@@ -79,19 +80,20 @@ export class TwitterProvider extends BaseProvider {
     throw new Error("X media upload is not wired yet");
   }
 
-  async publishPost(input: {
-    content: string;
-    mediaUrls: string[];
-    accessToken: string;
-    platformId: string;
-  }) {
+  async publishPost(input: PublishInput) {
     let mediaPayload: Record<string, unknown> = {};
-
-    const imageUrl = input.mediaUrls[0];
-    if (imageUrl) {
-      const mediaId = await this.uploadImageForTweet(input.accessToken, imageUrl);
-      if (mediaId) {
-        mediaPayload = { media: { media_ids: [mediaId] } };
+    const items = itemsFromPublish(input);
+    const kind = firstKind(items);
+    const toUpload =
+      kind === "video" || kind === "gif" ? items.slice(0, 1) : items.slice(0, 4);
+    if (toUpload.length) {
+      const mediaIds: string[] = [];
+      for (const item of toUpload) {
+        const mediaId = await this.uploadForTweet(input.accessToken, item.url);
+        if (mediaId) mediaIds.push(mediaId);
+      }
+      if (mediaIds.length) {
+        mediaPayload = { media: { media_ids: mediaIds } };
       }
     }
 
@@ -110,19 +112,13 @@ export class TwitterProvider extends BaseProvider {
     return { platformPostId: json.data.id };
   }
 
-  private async uploadImageForTweet(
+  private async uploadForTweet(
     accessToken: string,
     imageUrl: string,
   ): Promise<string | null> {
-    const imgRes = await fetch(imageUrl);
-    if (!imgRes.ok) {
-      throw new Error(`Could not fetch image from ${imageUrl}`);
-    }
-    const imgBuf = Buffer.from(await imgRes.arrayBuffer());
-    const contentType = (imgRes.headers.get("content-type") ?? "image/jpeg")
-      .split(";")[0]
-      .trim()
-      .toLowerCase();
+    const file = await fetchRemoteFile(imageUrl);
+    const imgBuf = file.buffer;
+    const contentType = file.mimeType || "image/jpeg";
     const mediaCategory = categoryFor(contentType);
 
     const initRes = await fetch(`${MEDIA_UPLOAD_URL}/initialize`, {
@@ -194,7 +190,7 @@ export class TwitterProvider extends BaseProvider {
     initial?: XProcessing,
   ) {
     let info = initial;
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 40; i++) {
       if (!info || info.state === "succeeded") return;
       if (info.state === "failed") {
         throw new Error(info.error?.message ?? "X rejected this media");

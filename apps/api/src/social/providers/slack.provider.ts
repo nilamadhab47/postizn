@@ -1,7 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import { Platform } from "@prisma/client";
-import type { AuthResult } from "./base-provider";
+import { mediaKind } from "@postn/shared";
+import type { AuthResult, PublishInput } from "./base-provider";
 import { TokenProvider, field, readJson } from "./token-provider";
+import { itemsFromPublish } from "./fetch-media";
 
 @Injectable()
 export class SlackProvider extends TokenProvider {
@@ -57,15 +59,18 @@ export class SlackProvider extends TokenProvider {
     };
   }
 
-  async publishPost(input: {
-    content: string;
-    mediaUrls: string[];
-    accessToken: string;
-    platformId: string;
-  }) {
-    const imageBlocks = (input.mediaUrls ?? [])
-      .filter(Boolean)
-      .map((url) => ({ type: "image" as const, image_url: url, alt_text: "postN image" }));
+  async publishPost(input: PublishInput) {
+    const items = itemsFromPublish(input);
+    if (items.some((item) => mediaKind(item.mimeType) === "video")) {
+      throw new Error("Slack does not take video. Unselect Slack or drop the video.");
+    }
+    const imageBlocks = items
+      .filter((item) => mediaKind(item.mimeType) !== "video")
+      .map((item) => ({
+        type: "image" as const,
+        image_url: item.url,
+        alt_text: "postN image",
+      }));
 
     const res = await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",

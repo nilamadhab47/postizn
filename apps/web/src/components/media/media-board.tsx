@@ -1,22 +1,37 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { api, ApiError } from "@/lib/api";
 import { AppHeader } from "@/components/layout/app-header";
+import { mediaKind } from "@postn/shared";
+import {
+  MEDIA_FILE_ACCEPT,
+  acceptedFiles,
+  isFileDrag,
+} from "@/lib/compose-media";
 
 type MediaItem = {
   id: string;
   url: string;
   fileName: string;
   bytes: number;
+  mimeType?: string;
   createdAt: string;
 };
+
+function formatBytes(bytes: number) {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
 
 export function MediaBoard() {
   const [items, setItems] = useState<MediaItem[]>([]);
   const [configured, setConfigured] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fileOver, setFileOver] = useState(false);
+  const fileDragDepth = useRef(0);
 
   async function refresh() {
     const data = await api<{ configured: boolean; items: MediaItem[] }>("/media");
@@ -30,14 +45,20 @@ export function MediaBoard() {
     );
   }, []);
 
-  async function onPick(file: File | undefined) {
-    if (!file) return;
+  async function onPickFiles(files: File[]) {
+    const incoming = acceptedFiles(files);
+    if (!incoming.length) {
+      setError("Use a JPEG, PNG, WebP, GIF, or MP4");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const body = new FormData();
-      body.append("file", file);
-      await api("/media", { method: "POST", body });
+      for (const file of incoming) {
+        const body = new FormData();
+        body.append("file", file);
+        await api("/media", { method: "POST", body });
+      }
       await refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Upload failed");
@@ -56,23 +77,70 @@ export function MediaBoard() {
     }
   }
 
+  function onBoardDragEnter(event: DragEvent<HTMLDivElement>) {
+    if (!isFileDrag(event) || busy) return;
+    event.preventDefault();
+    fileDragDepth.current += 1;
+    setFileOver(true);
+  }
+
+  function onBoardDragLeave(event: DragEvent<HTMLDivElement>) {
+    if (!isFileDrag(event)) return;
+    fileDragDepth.current = Math.max(0, fileDragDepth.current - 1);
+    if (fileDragDepth.current === 0) setFileOver(false);
+  }
+
+  function onBoardDragOver(event: DragEvent<HTMLDivElement>) {
+    if (!isFileDrag(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = busy ? "none" : "copy";
+  }
+
+  function onBoardDrop(event: DragEvent<HTMLDivElement>) {
+    if (!isFileDrag(event)) return;
+    event.preventDefault();
+    fileDragDepth.current = 0;
+    setFileOver(false);
+    if (busy) return;
+    void onPickFiles(Array.from(event.dataTransfer.files ?? []));
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <AppHeader title="Media" />
-      <div className="min-h-0 flex-1 overflow-y-auto p-8">
+      <div
+        className="relative min-h-0 flex-1 overflow-y-auto p-8"
+        onDragEnter={onBoardDragEnter}
+        onDragLeave={onBoardDragLeave}
+        onDragOver={onBoardDragOver}
+        onDrop={onBoardDrop}
+      >
+        {fileOver ? (
+          <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-background/80">
+            <p className="rounded-xl border border-accent bg-card px-4 py-3 text-sm font-bold text-accent">
+              Drop photos or an MP4 to upload
+            </p>
+          </div>
+        ) : null}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-xl text-sm text-muted">
-            Uploads go to Cloudflare R2 under <span className="font-semibold">postn/</span>, then
-            the URL is stored on the draft. Reuse a file from here in Compose.
+            Drop files here or upload. They go to Cloudflare R2 under{" "}
+            <span className="font-semibold">postn/</span>. Photos up to 10 MB,
+            GIFs 15 MB, MP4 50 MB.
           </p>
           <label className="cursor-pointer rounded-xl bg-accent px-4 py-2 text-sm font-bold text-accent-fg">
-            {busy ? "Uploading…" : "Upload image"}
+            {busy ? "Uploading…" : "Upload"}
             <input
               type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
+              accept={MEDIA_FILE_ACCEPT}
+              multiple
               className="hidden"
               disabled={busy}
-              onChange={(e) => void onPick(e.target.files?.[0])}
+              onChange={(e) => {
+                const list = e.target.files ? Array.from(e.target.files) : [];
+                e.target.value = "";
+                void onPickFiles(list);
+              }}
             />
           </label>
         </div>
@@ -84,17 +152,32 @@ export function MediaBoard() {
           </p>
         ) : items.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-line px-6 py-16 text-center">
-            <p className="text-xl font-bold">No images yet</p>
-            <p className="mt-2 text-base text-muted">Upload a JPEG, PNG, WebP, or GIF under 8 MB.</p>
+            <p className="text-xl font-bold">No files yet</p>
+            <p className="mt-2 text-base text-muted">
+              Drop a JPEG, PNG, WebP, GIF, or MP4, or click Upload.
+            </p>
           </div>
         ) : (
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {items.map((item) => (
               <li key={item.id} className="overflow-hidden rounded-2xl border border-line bg-card">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={item.url} alt={item.fileName} className="h-40 w-full object-cover" />
+                {mediaKind(item.mimeType ?? "") === "video" ? (
+                  <video
+                    src={item.url}
+                    className="h-40 w-full object-cover"
+                    muted
+                    playsInline
+                    controls
+                  />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={item.url} alt={item.fileName} className="h-40 w-full object-cover" />
+                )}
                 <div className="flex items-center justify-between gap-2 p-3">
-                  <p className="truncate text-xs font-semibold">{item.fileName}</p>
+                  <p className="truncate text-xs font-semibold">
+                    {item.fileName}
+                    <span className="ml-1 text-muted">{formatBytes(item.bytes)}</span>
+                  </p>
                   <button
                     type="button"
                     onClick={() => void remove(item.id)}

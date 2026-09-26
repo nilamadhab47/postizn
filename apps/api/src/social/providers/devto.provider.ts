@@ -1,7 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import { Platform } from "@prisma/client";
-import type { AuthResult } from "./base-provider";
+import { mediaKind } from "@postn/shared";
+import type { AuthResult, PublishInput } from "./base-provider";
 import { TokenProvider, field, readJson } from "./token-provider";
+import { itemsFromPublish } from "./fetch-media";
 
 @Injectable()
 export class DevtoProvider extends TokenProvider {
@@ -46,22 +48,21 @@ export class DevtoProvider extends TokenProvider {
     };
   }
 
-  async publishPost(input: {
-    content: string;
-    mediaUrls: string[];
-    accessToken: string;
-    platformId: string;
-  }) {
+  async publishPost(input: PublishInput) {
+    const items = itemsFromPublish(input);
+    if (items.some((item) => mediaKind(item.mimeType) === "video")) {
+      throw new Error("Dev.to does not take video. Unselect Dev.to or drop the video.");
+    }
     const title =
       input.content.split("\n").find((line) => line.trim())?.slice(0, 80) ||
       "postN note";
 
-    const imageMarkdown = (input.mediaUrls ?? [])
-      .filter(Boolean)
-      .map((url) => `\n\n![image](${url})`)
+    const imageMarkdown = items
+      .filter((item) => item.url)
+      .map((item) => `\n\n![image](${item.url})`)
       .join("");
     const bodyMarkdown = input.content + imageMarkdown;
-    const coverImage = input.mediaUrls?.[0] || undefined;
+    const coverImage = items[0]?.url || undefined;
 
     const res = await fetch("https://dev.to/api/articles", {
       method: "POST",

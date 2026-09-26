@@ -11,6 +11,7 @@ import { Platform, PostStatus, type Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import {
   PLATFORM_CHAR_LIMITS,
+  mediaBundleError,
   platformCharCount,
   type Platform as SharedPlatform,
 } from "@postn/shared";
@@ -62,13 +63,18 @@ export class PostsService {
     const platforms = this.parsePlatforms(input.platforms);
     const overrides = this.cleanOverrides(content, input.contentByPlatform);
     const scheduledAt = this.parseSchedule(action, input.scheduledAt);
-    const mediaUrls = await this.media.urlsForUser(
+    const media = await this.media.ownedForUser(
       userId,
       (input.mediaUrls ?? []).filter((url) => typeof url === "string"),
     );
+    const mediaUrls = media.map((item) => item.url);
+    if (action !== "draft") {
+      const mediaError = mediaBundleError(media, platforms);
+      if (mediaError) throw new BadRequestException(mediaError);
+    }
 
-    if (action !== "draft" && !content && !Object.keys(overrides).length) {
-      throw new BadRequestException("Write something before sending");
+    if (action !== "draft" && !content && !Object.keys(overrides).length && !mediaUrls.length) {
+      throw new BadRequestException("Write something or attach a file before sending");
     }
     if (action === "draft" && !content && !Object.keys(overrides).length && !mediaUrls.length) {
       throw new BadRequestException("Draft is empty");
@@ -87,7 +93,7 @@ export class PostsService {
 
     for (const platform of platforms) {
       const body = (overrides[platform] ?? content).trim();
-      if (action !== "draft" && !body) {
+      if (action !== "draft" && !body && !mediaUrls.length) {
         throw new BadRequestException(`${channelLabel(platform)} has no text`);
       }
       const limit = PLATFORM_CHAR_LIMITS[platform as SharedPlatform];
@@ -152,6 +158,49 @@ export class PostsService {
     return this.publishDue(post.id, { retryFailed: false });
   }
 
+  async reschedule(userId: string, id: string, raw?: string) {
+    const post = await this.prisma.post.findFirst({
+      where: { id, userId },
+    });
+    if (!post) throw new NotFoundException("Post not found");
+    if (post.status !== PostStatus.SCHEDULED) {
+      throw new BadRequestException("Only queued posts can be moved");
+    }
+    const scheduledAt = this.parseSchedule("schedule", raw);
+    if (!scheduledAt) {
+      throw new BadRequestException("Pick an IST time to schedule");
+    }
+    if (post.scheduledAt && post.scheduledAt.getTime() === scheduledAt.getTime()) {
+      return this.get(userId, id);
+    }
+    const previous = post.scheduledAt;
+    await this.prisma.post.update({
+      where: { id },
+      data: { scheduledAt },
+    });
+    try {
+      await this.publishQueue.enqueue(id, scheduledAt);
+    } catch (err) {
+      await this.prisma.post.update({
+        where: { id },
+        data: { scheduledAt: previous },
+      });
+      if (previous) {
+        try {
+          await this.publishQueue.enqueue(id, previous);
+        } catch {
+          /* original job may still be on the queue */
+        }
+      }
+      const message = err instanceof Error ? err.message : "queue failed";
+      this.log.warn(`could not reschedule ${id}: ${message}`);
+      throw new ServiceUnavailableException(
+        "Scheduler is not reachable. Is Redis running on 6381?",
+      );
+    }
+    return this.get(userId, id);
+  }
+
   async get(userId: string, id: string) {
     const post = await this.prisma.post.findFirst({
       where: { id, userId },
@@ -190,10 +239,10 @@ export class PostsService {
     const posts = await this.prisma.post.findMany({
       where: { userId, ...statusFilter },
       orderBy: { createdAt: "desc" },
-      take: 50,
+      take: 200,
       include: { targets: { include: { socialAccount: true } } },
     });
-    return { items: posts.map((post) => this.present(post)) };
+    return { items: await Promise.all(posts.map((post) => this.present(post))) };
   }
 
   async publishDue(postId: string, options: { retryFailed?: boolean } = {}) {
@@ -243,10 +292,11 @@ export class PostsService {
       }
       const body = (overrides[target.socialAccount.platform] ?? current.content).trim();
       try {
+        const media = await this.media.hydrate(current.userId, current.mediaUrls);
         const result = await this.social.publishToAccount(
           target.socialAccount,
           body,
-          current.mediaUrls,
+          media,
         );
         await this.prisma.postTarget.update({
           where: { id: target.id },
@@ -313,7 +363,7 @@ export class PostsService {
       })),
     });
 
-    const presented = this.present(updated);
+    const presented = await this.present(updated);
     if (options.retryFailed !== false && failed.length) {
       throw new Error(failedReason ?? "Publish failed");
     }
@@ -385,17 +435,19 @@ export class PostsService {
     return value as PostStatus;
   }
 
-  private present(
+  private async present(
     post: Prisma.PostGetPayload<{
       include: { targets: { include: { socialAccount: true } } };
     }>,
   ) {
     const overrides = asOverrideMap(post.contentByPlatform);
+    const media = await this.media.hydrate(post.userId, post.mediaUrls);
     return {
       id: post.id,
       content: post.content,
       contentByPlatform: Object.keys(overrides).length ? overrides : null,
       mediaUrls: post.mediaUrls,
+      media,
       status: post.status,
       scheduledAt: post.scheduledAt?.toISOString() ?? null,
       publishedAt: post.publishedAt?.toISOString() ?? null,

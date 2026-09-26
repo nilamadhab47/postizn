@@ -70,11 +70,18 @@ export type PostTarget = {
   publishedAt: string | null;
 };
 
+export type PostMedia = {
+  url: string;
+  mimeType: string;
+  bytes?: number;
+};
+
 export type Post = {
   id: string;
   content: string;
   contentByPlatform: Record<string, string> | null;
   mediaUrls: string[];
+  media?: PostMedia[];
   status: PostStatus;
   scheduledAt: string | null;
   publishedAt: string | null;
@@ -83,3 +90,83 @@ export type Post = {
   createdAt: string;
   targets?: PostTarget[];
 };
+
+export const MAX_POST_MEDIA = 4;
+export const MAX_STILL_BYTES = 10 * 1024 * 1024;
+export const MAX_GIF_BYTES = 15 * 1024 * 1024;
+export const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+export const MAX_DISCORD_FILE_BYTES = 25 * 1024 * 1024;
+export const MIN_VIDEO_SECONDS = 3;
+export const MAX_VIDEO_SECONDS = 140;
+
+export type MediaKind = "image" | "gif" | "video";
+
+export type MediaRef = {
+  url: string;
+  mimeType: string;
+  bytes: number;
+};
+
+export function mediaKind(mimeType: string): MediaKind | null {
+  const mime = mimeType.split(";")[0].trim().toLowerCase();
+  if (mime === "image/gif") return "gif";
+  if (mime === "image/jpeg" || mime === "image/png" || mime === "image/webp") {
+    return "image";
+  }
+  if (mime === "video/mp4") return "video";
+  return null;
+}
+
+export function maxBytesForKind(kind: MediaKind) {
+  if (kind === "video") return MAX_VIDEO_BYTES;
+  if (kind === "gif") return MAX_GIF_BYTES;
+  return MAX_STILL_BYTES;
+}
+
+export function guessMimeFromUrl(url: string) {
+  const path = url.split("?")[0]?.toLowerCase() ?? "";
+  if (path.endsWith(".mp4")) return "video/mp4";
+  if (path.endsWith(".gif")) return "image/gif";
+  if (path.endsWith(".png")) return "image/png";
+  if (path.endsWith(".webp")) return "image/webp";
+  return "image/jpeg";
+}
+
+export function mediaBundleError(
+  items: MediaRef[],
+  platforms: string[],
+): string | null {
+  if (items.length > MAX_POST_MEDIA) {
+    return "You can attach up to 4 photos";
+  }
+  const kinds = items.map((item) => mediaKind(item.mimeType));
+  if (kinds.some((kind) => !kind)) {
+    return "Use JPEG, PNG, WebP, GIF, or MP4";
+  }
+  const hasVideo = kinds.includes("video");
+  const hasGif = kinds.includes("gif");
+  const hasImage = kinds.includes("image");
+  const exclusive = [hasVideo, hasGif, hasImage].filter(Boolean).length;
+  if (exclusive > 1) {
+    return "Use either photos, one GIF, or one video — not mixed";
+  }
+  if (hasVideo && items.length > 1) return "One video per post";
+  if (hasGif && items.length > 1) return "One GIF per post";
+
+  const selected = new Set(platforms.map((platform) => platform.toUpperCase()));
+  if (hasVideo && selected.has("SLACK")) {
+    return "Slack does not take video. Unselect Slack or drop the video.";
+  }
+  if (hasVideo && selected.has("DEVTO")) {
+    return "Dev.to does not take video. Unselect Dev.to or drop the video.";
+  }
+  if (
+    hasVideo &&
+    selected.has("DISCORD") &&
+    items[0] &&
+    items[0].bytes > MAX_DISCORD_FILE_BYTES
+  ) {
+    return "Discord webhooks only take files under 25 MB";
+  }
+  return null;
+}

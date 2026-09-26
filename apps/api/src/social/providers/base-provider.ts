@@ -11,9 +11,16 @@ export type AuthResult = {
   tokenExpiry?: Date;
 };
 
+export type PublishMedia = {
+  url: string;
+  mimeType: string;
+  bytes: number;
+};
+
 export type PublishInput = {
   content: string;
   mediaUrls: string[];
+  media?: PublishMedia[];
   accessToken: string;
   platformId: string;
 };

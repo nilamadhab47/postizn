@@ -35,7 +35,7 @@ export class PublishWorker implements OnModuleInit, OnModuleDestroy {
       {
         connection: this.workerConnection,
         concurrency: 2,
-        lockDuration: 120_000,
+        lockDuration: 600_000,
       },
     );
     this.worker.on("completed", (job) => {

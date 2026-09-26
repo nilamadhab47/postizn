@@ -105,7 +105,7 @@ export class SocialService {
   async publishToAccount(
     account: SocialAccount,
     content: string,
-    mediaUrls: string[] = [],
+    media: { url: string; mimeType: string; bytes: number }[] = [],
   ) {
     if (account.isMock) {
       throw new Error("Reconnect the live channel before publishing");
@@ -116,9 +116,11 @@ export class SocialService {
       throw new Error("Unknown platform");
     }
     const accessToken = decryptSecret(ready.accessToken, this.cryptoKey());
+    const mediaUrls = media.map((item) => item.url);
     return provider.publishPost({
       content,
       mediaUrls,
+      media,
       accessToken,
       platformId: ready.platformId,
     });

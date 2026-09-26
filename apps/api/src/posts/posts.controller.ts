@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser, type JwtUser } from "../auth/current-user.decorator";
 import { PostsService, type CreatePostInput } from "./posts.service";
@@ -21,5 +30,14 @@ export class PostsController {
   @Post()
   create(@CurrentUser() user: JwtUser, @Body() body: CreatePostInput) {
     return this.posts.create(user.userId, body);
+  }
+
+  @Patch(":id")
+  reschedule(
+    @CurrentUser() user: JwtUser,
+    @Param("id") id: string,
+    @Body() body: { scheduledAt?: string },
+  ) {
+    return this.posts.reschedule(user.userId, id, body.scheduledAt);
   }
 }

@@ -8,6 +8,52 @@ import {
   X_LIMIT,
   xCharCount,
 } from "@/lib/compose-text";
+import { mediaKind } from "@postn/shared";
+
+export type PreviewMedia = { url: string; mimeType: string };
+
+function resolveMedia(
+  media?: PreviewMedia[],
+  image?: string | null,
+): PreviewMedia[] {
+  if (media?.length) return media;
+  if (image) return [{ url: image, mimeType: "image/jpeg" }];
+  return [];
+}
+
+function MediaStrip({ media }: { media: PreviewMedia[] }) {
+  if (!media.length) return null;
+  const first = media[0];
+  const kind = mediaKind(first.mimeType);
+  if (kind === "video") {
+    return (
+      <video
+        src={first.url}
+        className="mt-2 max-h-56 w-full object-cover"
+        controls
+        playsInline
+        muted
+      />
+    );
+  }
+  if (media.length === 1) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={first.url} alt="" className="mt-2 max-h-56 w-full object-cover" />;
+  }
+  return (
+    <div className="mt-2 grid grid-cols-2 gap-0.5">
+      {media.slice(0, 4).map((item) => (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          key={item.url}
+          src={item.url}
+          alt=""
+          className="h-28 w-full object-cover"
+        />
+      ))}
+    </div>
+  );
+}
 
 export function LinkedInPreview({
   name,
@@ -15,19 +61,22 @@ export function LinkedInPreview({
   avatar,
   body,
   image,
+  media,
   when,
 }: {
   name: string;
   handle: string;
   avatar: string | null;
   body: string;
-  image: string | null;
+  image?: string | null;
+  media?: PreviewMedia[];
   when: string;
 }) {
   const clipped = body.length > LINKEDIN_SEE_MORE;
   const shown = clipped ? body.slice(0, LINKEDIN_SEE_MORE).trimEnd() : body;
   const count = Array.from(body).length;
   const over = count > LINKEDIN_LIMIT;
+  const files = resolveMedia(media, image);
 
   return (
     <article className="overflow-hidden rounded-2xl bg-[#f4f2ee] text-[#1b1f23] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.6)]">
@@ -49,10 +98,7 @@ export function LinkedInPreview({
           </span>
         ) : null}
       </p>
-      {image ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={image} alt="" className="mt-2 max-h-56 w-full object-cover" />
-      ) : null}
+      <MediaStrip media={files} />
       <footer className="flex justify-between px-3 py-2 text-[11px] font-semibold text-[#666]">
         <span>Like</span>
         <span>Comment</span>
@@ -76,17 +122,20 @@ export function XPreview({
   avatar,
   body,
   image,
+  media,
   when,
 }: {
   name: string;
   handle: string;
   avatar: string | null;
   body: string;
-  image: string | null;
+  image?: string | null;
+  media?: PreviewMedia[];
   when: string;
 }) {
   const count = xCharCount(body);
   const over = count > X_LIMIT;
+  const files = resolveMedia(media, image);
 
   return (
     <article className="overflow-hidden rounded-2xl bg-black text-[#e7e9ea] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.8)]">
@@ -104,14 +153,7 @@ export function XPreview({
       <p className="whitespace-pre-wrap px-3 pt-2 text-[15px] leading-snug">
         {body || "Your post on X shows up here."}
       </p>
-      {image ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={image}
-          alt=""
-          className="mx-3 mt-2 max-h-52 w-[calc(100%-1.5rem)] rounded-2xl object-cover"
-        />
-      ) : null}
+      <MediaStrip media={files} />
       <footer className="flex justify-between px-6 py-3 text-[12px] text-[#71767b]">
         <span>Reply</span>
         <span>Repost</span>
@@ -135,14 +177,16 @@ type PreviewProps = {
   handle: string;
   avatar: string | null;
   body: string;
-  image: string | null;
+  image?: string | null;
+  media?: PreviewMedia[];
   when: string;
 };
 
-export function TelegramPreview({ name, handle, body, image }: PreviewProps) {
+export function TelegramPreview({ name, handle, body, image, media }: PreviewProps) {
   const count = Array.from(body).length;
   const over = count > PLATFORM_LIMITS.TELEGRAM;
-  const captionOver = Boolean(image) && count > TELEGRAM_CAPTION;
+  const files = resolveMedia(media, image);
+  const captionOver = files.length > 0 && count > TELEGRAM_CAPTION;
   return (
     <article className="overflow-hidden rounded-2xl bg-[#182533] text-[#e8eef4] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.8)]">
       <header className="flex items-center gap-2 px-3 pt-3">
@@ -156,10 +200,7 @@ export function TelegramPreview({ name, handle, body, image }: PreviewProps) {
           </p>
         </div>
       </header>
-      {image ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={image} alt="" className="mt-2 max-h-52 w-full object-cover" />
-      ) : null}
+      {files.length ? <MediaStrip media={files} /> : null}
       <p className="whitespace-pre-wrap px-3 py-2 text-[14px] leading-snug">
         {body || "Your Telegram channel post shows up here."}
       </p>
@@ -168,16 +209,17 @@ export function TelegramPreview({ name, handle, body, image }: PreviewProps) {
           over || captionOver ? "text-[#ff8a80]" : "text-[#8aa0b5]"
         }`}
       >
-        {count} / {image ? TELEGRAM_CAPTION : PLATFORM_LIMITS.TELEGRAM}
-        {captionOver ? " · caption max 1024 with a photo" : ""}
+        {count} / {files.length ? TELEGRAM_CAPTION : PLATFORM_LIMITS.TELEGRAM}
+        {captionOver ? " · caption max 1024 with media" : ""}
       </p>
     </article>
   );
 }
 
-export function SlackPreview({ name, handle, body, image, when }: PreviewProps) {
+export function SlackPreview({ name, handle, body, image, media, when }: PreviewProps) {
   const count = Array.from(body).length;
   const over = count > PLATFORM_LIMITS.SLACK;
+  const files = resolveMedia(media, image);
   return (
     <article className="overflow-hidden rounded-2xl bg-white text-[#1d1c1d] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.6)]">
       <p className="border-b border-[#eee] px-3 py-2 text-[12px] font-bold text-[#616061]">
@@ -195,10 +237,7 @@ export function SlackPreview({ name, handle, body, image, when }: PreviewProps) 
           <p className="whitespace-pre-wrap text-[14px] leading-snug">
             {body || "Your Slack message shows up here."}
           </p>
-          {image ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={image} alt="" className="mt-2 max-h-40 rounded-md object-cover" />
-          ) : null}
+          {files.length ? <MediaStrip media={files} /> : null}
         </div>
       </div>
       <p
@@ -212,9 +251,10 @@ export function SlackPreview({ name, handle, body, image, when }: PreviewProps) 
   );
 }
 
-export function DiscordPreview({ name, handle, body, image, when }: PreviewProps) {
+export function DiscordPreview({ name, handle, body, image, media, when }: PreviewProps) {
   const count = Array.from(body).length;
   const over = count > PLATFORM_LIMITS.DISCORD;
+  const files = resolveMedia(media, image);
   return (
     <article className="overflow-hidden rounded-2xl bg-[#313338] text-[#f2f3f5] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.8)]">
       <p className="px-3 pt-2 text-[11px] font-bold uppercase tracking-wide text-[#b5bac1]">
@@ -234,10 +274,7 @@ export function DiscordPreview({ name, handle, body, image, when }: PreviewProps
           <p className="whitespace-pre-wrap text-[14px] leading-snug">
             {body || "Your Discord webhook message shows up here."}
           </p>
-          {image ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={image} alt="" className="mt-2 max-h-40 rounded-md object-cover" />
-          ) : null}
+          {files.length ? <MediaStrip media={files} /> : null}
         </div>
       </div>
       <p
@@ -251,17 +288,15 @@ export function DiscordPreview({ name, handle, body, image, when }: PreviewProps
   );
 }
 
-export function MediumPreview({ name, body, image, when }: PreviewProps) {
+export function MediumPreview({ name, body, image, media, when }: PreviewProps) {
   const lines = body.split("\n").filter((line) => line.trim());
   const title = lines[0]?.slice(0, 80) || "Title from your first line";
   const rest = lines.slice(1).join("\n") || body;
   const count = Array.from(body).length;
+  const files = resolveMedia(media, image);
   return (
     <article className="overflow-hidden rounded-2xl bg-white text-[#242424] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.6)]">
-      {image ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={image} alt="" className="max-h-40 w-full object-cover" />
-      ) : null}
+      {files.length ? <MediaStrip media={files} /> : null}
       <div className="p-4">
         <p className="text-[11px] font-semibold text-[#6b6b6b]">
           Draft · {name} · {when}
@@ -285,9 +320,10 @@ export function ChannelPreview({
   avatar,
   body,
   image,
+  media,
   when,
 }: PreviewProps & { platform: string }) {
-  const props = { name, handle, avatar, body, image, when };
+  const props = { name, handle, avatar, body, image, media, when };
   switch (platform) {
     case "TWITTER":
       return <XPreview {...props} />;
@@ -306,17 +342,15 @@ export function ChannelPreview({
   }
 }
 
-export function DevtoPreview({ name, handle, body, image, when }: PreviewProps) {
+export function DevtoPreview({ name, handle, body, image, media, when }: PreviewProps) {
   const lines = body.split("\n").filter((line) => line.trim());
   const title = lines[0]?.slice(0, 80) || "Title from your first line";
   const rest = lines.slice(1).join("\n") || body;
   const count = Array.from(body).length;
+  const files = resolveMedia(media, image);
   return (
     <article className="overflow-hidden rounded-2xl border border-[#d6d6d7] bg-white text-[#171717] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.6)]">
-      {image ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={image} alt="" className="max-h-40 w-full object-cover" />
-      ) : null}
+      {files.length ? <MediaStrip media={files} /> : null}
       <div className="p-4">
         <p className="text-[11px] font-bold uppercase tracking-wide text-[#404040]">
           Unpublished · {handle || name} · {when}

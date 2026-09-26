@@ -1,3 +1,5 @@
+import { DEFAULT_TIMEZONE } from "@postn/shared";
+
 export function startOfDay(date: Date) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -60,6 +62,43 @@ export function hourLabel(hour: number) {
   });
 }
 
+/** Wall clock in Asia/Kolkata, stored as a local Date so calendar cells stay civil dates. */
+export function istWallClock(date = new Date()) {
+  const parts = istParts(date);
+  return new Date(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  );
+}
+
+export function istParts(date: Date) {
+  const fmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: DEFAULT_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+  const bag = Object.fromEntries(
+    fmt.formatToParts(date).map((part) => [part.type, part.value]),
+  );
+  return {
+    year: Number(bag.year),
+    month: Number(bag.month),
+    day: Number(bag.day),
+    hour: Number(bag.hour),
+    minute: Number(bag.minute),
+    second: Number(bag.second ?? "0"),
+  };
+}
+
 export function rangeLabel(
   view: "day" | "week" | "month",
   cursor: Date,
@@ -118,3 +157,27 @@ export function composeHref(date: Date, hour = 10) {
 
 export const HOURS = Array.from({ length: 24 }, (_, i) => i);
 export const ROW_PX = 68;
+
+/** Asia/Kolkata is UTC+05:30 with no DST. Civil fields on `day` are IST. */
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+export function istSlotToIso(day: Date, hour: number, minute = 0) {
+  const utc =
+    Date.UTC(day.getFullYear(), day.getMonth(), day.getDate(), hour, minute) -
+    IST_OFFSET_MS;
+  return new Date(utc).toISOString();
+}
+
+export function hourFromClientY(lane: HTMLElement, clientY: number) {
+  const hour = Math.floor((clientY - lane.getBoundingClientRect().top) / ROW_PX);
+  return Math.min(23, Math.max(0, hour));
+}
+
+export function scheduleIso(day: Date, hour: number, now: Date) {
+  const iso = istSlotToIso(day, hour, 0);
+  if (new Date(iso).getTime() >= Date.now() + 30_000) return iso;
+  if (sameDay(day, startOfDay(now)) && hour === now.getHours()) {
+    return new Date(Date.now() + 120_000).toISOString();
+  }
+  return iso;
+}

@@ -1,15 +1,18 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Platform } from "@prisma/client";
-import { BaseProvider, type AuthResult, type UploadInput } from "./base-provider";
+import { mediaKind } from "@postn/shared";
+import { BaseProvider, type AuthResult, type PublishInput, type UploadInput } from "./base-provider";
 import type { ChannelPlan } from "../channel-catalog";
 import { expiryFromSeconds, hasKey } from "./pkce";
+import { fetchRemoteFile, firstKind, itemsFromPublish } from "./fetch-media";
 
 const AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization";
 const TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken";
 const USERINFO_URL = "https://api.linkedin.com/v2/userinfo";
 const POSTS_URL = "https://api.linkedin.com/rest/posts";
 const IMAGES_URL = "https://api.linkedin.com/rest/images?action=initializeUpload";
+const VIDEOS_URL = "https://api.linkedin.com/rest/videos";
 const MEMBER_SCOPES = ["openid", "profile", "email", "w_member_social"];
 export const LINKEDIN_VERSION = "202609";
 
@@ -81,20 +84,47 @@ export class LinkedinProvider extends BaseProvider {
     throw new Error("LinkedIn media upload is not wired yet");
   }
 
-  async publishPost(input: {
-    content: string;
-    mediaUrls: string[];
-    accessToken: string;
-    platformId: string;
-  }) {
+  async publishPost(input: PublishInput) {
     let mediaContent: Record<string, unknown> = {};
+    const items = itemsFromPublish(input);
+    const kind = firstKind(items);
 
-    const imageUrl = input.mediaUrls[0];
-    if (imageUrl) {
+    if (kind === "video" && items[0]) {
+      const videoUrn = await this.uploadVideo(
+        input.accessToken,
+        input.platformId,
+        items[0].url,
+      );
+      mediaContent = { content: { media: { id: videoUrn } } };
+    } else if (items.length >= 2) {
+      const urns: string[] = [];
+      for (const item of items) {
+        if (mediaKind(item.mimeType) !== "image" && mediaKind(item.mimeType) !== "gif") {
+          continue;
+        }
+        const urn = await this.uploadImage(
+          input.accessToken,
+          input.platformId,
+          item.url,
+        );
+        if (urn) urns.push(urn);
+      }
+      if (urns.length === 1) {
+        mediaContent = { content: { media: { id: urns[0] } } };
+      } else if (urns.length > 1) {
+        mediaContent = {
+          content: {
+            multiImage: {
+              images: urns.map((id) => ({ id })),
+            },
+          },
+        };
+      }
+    } else if (items[0]) {
       const imageUrn = await this.uploadImage(
         input.accessToken,
         input.platformId,
-        imageUrl,
+        items[0].url,
       );
       if (imageUrn) {
         mediaContent = { content: { media: { id: imageUrn } } };
@@ -164,13 +194,8 @@ export class LinkedinProvider extends BaseProvider {
       throw new Error("LinkedIn image init returned no upload URL");
     }
 
-    const imgRes = await fetch(imageUrl);
-    if (!imgRes.ok) {
-      throw new Error(`Could not fetch image from ${imageUrl}`);
-    }
-    const imgBuf = Buffer.from(await imgRes.arrayBuffer());
-    const contentType =
-      imgRes.headers.get("content-type") ?? "application/octet-stream";
+    const img = await fetchRemoteFile(imageUrl);
+    const contentType = img.mimeType || "application/octet-stream";
 
     const putRes = await fetch(uploadUrl, {
       method: "PUT",
@@ -178,13 +203,126 @@ export class LinkedinProvider extends BaseProvider {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": contentType,
       },
-      body: imgBuf,
+      body: img.buffer,
     });
     if (!putRes.ok && putRes.status !== 201) {
       throw new Error(`LinkedIn image PUT failed (${putRes.status})`);
     }
 
     return imageUrn;
+  }
+
+  private async uploadVideo(
+    accessToken: string,
+    platformId: string,
+    videoUrl: string,
+  ) {
+    const file = await fetchRemoteFile(videoUrl);
+    const initRes = await fetch(`${VIDEOS_URL}?action=initializeUpload`, {
+      method: "POST",
+      headers: this.restHeaders(accessToken),
+      body: JSON.stringify({
+        initializeUploadRequest: {
+          owner: this.authorUrn(platformId),
+          fileSizeBytes: file.buffer.length,
+          uploadCaptions: false,
+          uploadThumbnail: false,
+        },
+      }),
+    });
+    if (!initRes.ok) {
+      const msg = await initRes.text().catch(() => "");
+      throw new Error(
+        `LinkedIn video init failed (${initRes.status}): ${msg.slice(0, 200)}`,
+      );
+    }
+    const initJson = (await initRes.json()) as {
+      value?: {
+        video?: string;
+        uploadToken?: string;
+        uploadInstructions?: Array<{
+          uploadUrl?: string;
+          firstByte?: number;
+          lastByte?: number;
+        }>;
+      };
+    };
+    const videoUrn = initJson.value?.video;
+    const instructions = initJson.value?.uploadInstructions ?? [];
+    if (!videoUrn || !instructions.length) {
+      throw new Error("LinkedIn video init returned no upload URL");
+    }
+
+    const uploadedPartIds: string[] = [];
+    for (const part of instructions) {
+      if (!part.uploadUrl) {
+        throw new Error("LinkedIn video part is missing an upload URL");
+      }
+      const start = part.firstByte ?? 0;
+      const end = (part.lastByte ?? file.buffer.length - 1) + 1;
+      const chunk = file.buffer.subarray(start, end);
+      const putRes = await fetch(part.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: chunk,
+      });
+      if (!putRes.ok && putRes.status !== 201) {
+        throw new Error(`LinkedIn video PUT failed (${putRes.status})`);
+      }
+      const etag = (putRes.headers.get("etag") ?? "").replace(/"/g, "");
+      if (!etag) {
+        throw new Error("LinkedIn video PUT returned no ETag");
+      }
+      uploadedPartIds.push(etag);
+    }
+
+    const finRes = await fetch(`${VIDEOS_URL}?action=finalizeUpload`, {
+      method: "POST",
+      headers: this.restHeaders(accessToken),
+      body: JSON.stringify({
+        finalizeUploadRequest: {
+          video: videoUrn,
+          uploadToken: initJson.value?.uploadToken ?? "",
+          uploadedPartIds,
+        },
+      }),
+    });
+    if (!finRes.ok) {
+      const msg = await finRes.text().catch(() => "");
+      throw new Error(
+        `LinkedIn video finalize failed (${finRes.status}): ${msg.slice(0, 200)}`,
+      );
+    }
+
+    await this.waitForVideo(accessToken, videoUrn);
+    return videoUrn;
+  }
+
+  private async waitForVideo(accessToken: string, videoUrn: string) {
+    const encoded = encodeURIComponent(videoUrn);
+    for (let i = 0; i < 90; i++) {
+      const res = await fetch(`${VIDEOS_URL}/${encoded}`, {
+        headers: this.restHeaders(accessToken),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        status?: string;
+        processingFailureReason?: string;
+        message?: string;
+      };
+      if (!res.ok) {
+        throw new Error(
+          json.message ?? `LinkedIn video status failed (${res.status})`,
+        );
+      }
+      if (json.status === "AVAILABLE") return;
+      if (json.status === "PROCESSING_FAILED") {
+        throw new Error(
+          json.processingFailureReason ?? "LinkedIn rejected this video",
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    throw new Error("LinkedIn is still processing this video");
   }
 
   protected authScopes() {

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import {
   HOURS,
   ROW_PX,
@@ -9,20 +10,27 @@ import {
   addMonths,
   composeHref,
   dayRelation,
+  hourFromClientY,
   hourLabel,
   hourRelation,
+  istWallClock,
   monthCells,
   rangeLabel,
   sameDay,
+  scheduleIso,
   startOfDay,
   weekDays,
 } from "@/lib/calendar";
 import {
   groupPostsByHour,
   postsOnDay,
-  sampleCalendarPosts,
+  fetchQueuePosts,
+  reschedulePost,
+  toCalPost,
+  whenLabel,
   type CalPost,
-} from "@/lib/sample-calendar-posts";
+} from "@/lib/calendar-posts";
+import { ApiError } from "@/lib/api";
 import {
   DaySheet,
   HourCluster,
@@ -33,19 +41,34 @@ import {
 type View = "day" | "week" | "month";
 
 export function CalendarBoard() {
-  const today = useMemo(() => startOfDay(new Date()), []);
-  const [now, setNow] = useState(() => new Date());
+  const today = useMemo(() => startOfDay(istWallClock()), []);
+  const [now, setNow] = useState(() => istWallClock());
   const [view, setView] = useState<View>("week");
   const [cursor, setCursor] = useState(today);
-  const posts = useMemo(() => sampleCalendarPosts(today), [today]);
+  const [posts, setPosts] = useState<CalPost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [active, setActive] = useState<{ post: CalPost; queue: CalPost[] } | null>(
     null,
   );
   const [dayPeek, setDayPeek] = useState<Date | null>(null);
+  const [moving, setMoving] = useState<CalPost | null>(null);
+  const [hoverSlot, setHoverSlot] = useState<{ day: Date; hour: number } | null>(
+    null,
+  );
 
   useEffect(() => {
-    const id = window.setInterval(() => setNow(new Date()), 30_000);
+    const id = window.setInterval(() => setNow(istWallClock()), 30_000);
     return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    void fetchQueuePosts()
+      .then(setPosts)
+      .catch((err) =>
+        setError(err instanceof ApiError ? err.message : "Could not load posts"),
+      )
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -66,6 +89,35 @@ export function CalendarBoard() {
     if (view === "day") setCursor((d) => addDays(d, dir));
     else if (view === "week") setCursor((d) => addDays(d, dir * 7));
     else setCursor((d) => addMonths(d, dir));
+  }
+
+  async function movePost(post: CalPost, day: Date, hour: number) {
+    if (!post.canMove) return;
+    if (sameDay(post.day, day) && post.hour === hour) return;
+    if (hourRelation(day, hour, now) === "past") {
+      toast.error("That hour has passed");
+      return;
+    }
+    const scheduledAt = scheduleIso(day, hour, now);
+    const previous = posts;
+    setPosts((rows) =>
+      rows.map((row) =>
+        row.id === post.id
+          ? { ...row, day: startOfDay(day), hour, at: scheduledAt }
+          : row,
+      ),
+    );
+    try {
+      const saved = await reschedulePost(post.id, scheduledAt);
+      const next = toCalPost(saved);
+      setPosts((rows) => rows.map((row) => (row.id === post.id ? next : row)));
+      toast.success(`Moved to ${whenLabel(next, now)} IST`);
+    } catch (err) {
+      setPosts(previous);
+      toast.error(
+        err instanceof ApiError ? err.message : "Could not move that post",
+      );
+    }
   }
 
   return (
@@ -119,14 +171,34 @@ export function CalendarBoard() {
         </div>
       </header>
 
+      {error ? (
+        <p className="border-b border-today/40 bg-today/10 px-5 py-2 text-sm font-semibold text-today">
+          {error}
+        </p>
+      ) : null}
+      {loading ? (
+        <p className="border-b border-line px-5 py-2 text-sm font-semibold text-muted">
+          Loading your posts…
+        </p>
+      ) : null}
+
       {view === "month" ? (
         <MonthGrid
           cells={months}
           today={today}
           cursor={cursor}
           posts={posts}
+          moving={moving}
+          hoverSlot={hoverSlot}
           onOpen={openPost}
           onOpenDay={setDayPeek}
+          onMoveStart={setMoving}
+          onMoveEnd={() => {
+            setMoving(null);
+            setHoverSlot(null);
+          }}
+          onHoverSlot={setHoverSlot}
+          onDropPost={movePost}
         />
       ) : (
         <TimeGrid
@@ -134,8 +206,17 @@ export function CalendarBoard() {
           today={today}
           now={now}
           posts={posts}
+          moving={moving}
+          hoverSlot={hoverSlot}
           onOpen={openPost}
           onOpenDay={setDayPeek}
+          onMoveStart={setMoving}
+          onMoveEnd={() => {
+            setMoving(null);
+            setHoverSlot(null);
+          }}
+          onHoverSlot={setHoverSlot}
+          onDropPost={movePost}
         />
       )}
 
@@ -165,15 +246,27 @@ function TimeGrid({
   today,
   now,
   posts,
+  moving,
+  hoverSlot,
   onOpen,
   onOpenDay,
+  onMoveStart,
+  onMoveEnd,
+  onHoverSlot,
+  onDropPost,
 }: {
   days: Date[];
   today: Date;
   now: Date;
   posts: CalPost[];
+  moving: CalPost | null;
+  hoverSlot: { day: Date; hour: number } | null;
   onOpen: (post: CalPost, queue: CalPost[]) => void;
   onOpenDay: (day: Date) => void;
+  onMoveStart: (post: CalPost) => void;
+  onMoveEnd: () => void;
+  onHoverSlot: (slot: { day: Date; hour: number } | null) => void;
+  onDropPost: (post: CalPost, day: Date, hour: number) => void;
 }) {
   const nowTop = (now.getHours() + now.getMinutes() / 60) * ROW_PX;
   const cols = `4.5rem repeat(${days.length}, minmax(0, 1fr))`;
@@ -234,6 +327,31 @@ function TimeGrid({
           {days.map((day) => {
             const rel = dayRelation(day, today);
             const lanePosts = postsOnDay(posts, day);
+            const hoverHour =
+              hoverSlot && sameDay(hoverSlot.day, day) ? hoverSlot.hour : null;
+
+            function onLaneDragOver(event: DragEvent<HTMLDivElement>) {
+              if (!moving) return;
+              event.preventDefault();
+              const hour = hourFromClientY(event.currentTarget, event.clientY);
+              if (hourRelation(day, hour, now) === "past") {
+                event.dataTransfer.dropEffect = "none";
+                onHoverSlot(null);
+                return;
+              }
+              event.dataTransfer.dropEffect = "move";
+              onHoverSlot({ day, hour });
+            }
+
+            function onLaneDrop(event: DragEvent<HTMLDivElement>) {
+              if (!moving) return;
+              event.preventDefault();
+              event.stopPropagation();
+              const hour = hourFromClientY(event.currentTarget, event.clientY);
+              onDropPost(moving, day, hour);
+              onMoveEnd();
+            }
+
             return (
               <div
                 key={day.toISOString()}
@@ -244,6 +362,8 @@ function TimeGrid({
                       ? "cal-lane-today"
                       : "cal-lane-future cal-dots"
                 }`}
+                onDragOverCapture={onLaneDragOver}
+                onDropCapture={onLaneDrop}
               >
                 {HOURS.map((hour) => {
                   const slot = hourRelation(day, hour, now);
@@ -262,6 +382,8 @@ function TimeGrid({
                       key={hour}
                       href={composeHref(day, hour)}
                       className={`group block ${
+                        moving ? "pointer-events-none" : ""
+                      } ${
                         slot === "now" ? "bg-today/10" : "hover:bg-accent/10"
                       }`}
                       style={{ height: ROW_PX }}
@@ -285,6 +407,13 @@ function TimeGrid({
                   />
                 ) : null}
 
+                {hoverHour !== null && hourRelation(day, hoverHour, now) !== "past" ? (
+                  <div
+                    className="pointer-events-none absolute inset-x-1 z-[8] rounded-xl border-2 border-dashed border-accent bg-accent/15"
+                    style={{ top: hoverHour * ROW_PX + 2, height: ROW_PX - 4 }}
+                  />
+                ) : null}
+
                 {groupPostsByHour(lanePosts).map(([hour, cluster]) => (
                   <div
                     key={hour}
@@ -293,10 +422,13 @@ function TimeGrid({
                   >
                     <HourCluster
                       posts={cluster}
+                      movingId={moving?.id}
                       onOpen={onOpen}
                       onOpenHour={() =>
                         onOpen(cluster[1] ?? cluster[0], cluster)
                       }
+                      onMoveStart={onMoveStart}
+                      onMoveEnd={onMoveEnd}
                     />
                   </div>
                 ))}
@@ -406,15 +538,27 @@ function MonthGrid({
   today,
   cursor,
   posts,
+  moving,
+  hoverSlot,
   onOpen,
   onOpenDay,
+  onMoveStart,
+  onMoveEnd,
+  onHoverSlot,
+  onDropPost,
 }: {
   cells: Date[];
   today: Date;
   cursor: Date;
   posts: CalPost[];
+  moving: CalPost | null;
+  hoverSlot: { day: Date; hour: number } | null;
   onOpen: (post: CalPost, queue: CalPost[]) => void;
   onOpenDay: (day: Date) => void;
+  onMoveStart: (post: CalPost) => void;
+  onMoveEnd: () => void;
+  onHoverSlot: (slot: { day: Date; hour: number } | null) => void;
+  onDropPost: (post: CalPost, day: Date, hour: number) => void;
 }) {
   return (
     <div className="min-h-0 flex-1 overflow-auto p-4">
@@ -433,6 +577,7 @@ function MonthGrid({
           const dayPosts = postsOnDay(posts, day);
           const visible = dayPosts.slice(0, 2);
           const extra = dayPosts.length - visible.length;
+          const hovered = Boolean(hoverSlot && sameDay(hoverSlot.day, day));
           return (
             <div
               key={day.toISOString()}
@@ -444,7 +589,23 @@ function MonthGrid({
                     : inMonth
                       ? "cal-lane-future cal-dots"
                       : "bg-card/30"
-              }`}
+              } ${hovered ? "ring-2 ring-accent" : ""}`}
+              onDragOver={(event) => {
+                if (!moving) return;
+                if (rel === "past") {
+                  event.dataTransfer.dropEffect = "none";
+                  return;
+                }
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                onHoverSlot({ day, hour: moving.hour });
+              }}
+              onDrop={(event) => {
+                if (!moving || rel === "past") return;
+                event.preventDefault();
+                onDropPost(moving, day, moving.hour);
+                onMoveEnd();
+              }}
             >
               <div className="mb-2 flex items-center justify-between">
                 <button
@@ -484,7 +645,10 @@ function MonthGrid({
                     <PostCard
                       post={post}
                       compact
+                      dimmed={moving?.id === post.id}
                       onOpen={(item) => onOpen(item, dayPosts)}
+                      onMoveStart={onMoveStart}
+                      onMoveEnd={onMoveEnd}
                     />
                   </div>
                 ))}
@@ -517,6 +681,9 @@ function Legend() {
       </span>
       <span className="flex items-center gap-1.5">
         <i className="size-2 rounded-full bg-today" /> Failed
+      </span>
+      <span className="font-semibold normal-case tracking-normal text-muted">
+        Drag a queued chip to another hour
       </span>
     </div>
   );

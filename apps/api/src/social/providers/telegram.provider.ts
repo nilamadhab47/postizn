@@ -1,7 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { Platform } from "@prisma/client";
-import type { AuthResult } from "./base-provider";
+import type { AuthResult, PublishInput } from "./base-provider";
 import { TokenProvider, field, readJson } from "./token-provider";
+import { firstKind, itemsFromPublish } from "./fetch-media";
 
 type TelegramChat = {
   id?: number;
@@ -105,13 +106,66 @@ export class TelegramProvider extends TokenProvider {
     };
   }
 
-  async publishPost(input: {
-    content: string;
-    mediaUrls: string[];
-    accessToken: string;
-    platformId: string;
-  }) {
-    const photo = input.mediaUrls[0];
+  async publishPost(input: PublishInput) {
+    const items = itemsFromPublish(input);
+    const kind = firstKind(items);
+
+    if (items.length >= 2) {
+      const json = await telegramApi<Array<{ message_id?: number }>>(
+        input.accessToken,
+        "sendMediaGroup",
+        {
+          chat_id: input.platformId,
+          media: items.map((item, index) => ({
+            type: "photo",
+            media: item.url,
+            ...(index === 0 && input.content
+              ? { caption: input.content.slice(0, 1024) }
+              : {}),
+          })),
+        },
+      );
+      const first = Array.isArray(json.result) ? json.result[0] : undefined;
+      if (!json.ok || first?.message_id == null) {
+        throw new Error(cleanTelegramError(json.description, "Telegram publish failed"));
+      }
+      return { platformPostId: String(first.message_id) };
+    }
+
+    if (kind === "video" && items[0]) {
+      const json = await telegramApi<{ message_id?: number }>(
+        input.accessToken,
+        "sendVideo",
+        {
+          chat_id: input.platformId,
+          video: items[0].url,
+          caption: input.content.slice(0, 1024),
+          supports_streaming: true,
+        },
+      );
+      if (!json.ok || json.result?.message_id == null) {
+        throw new Error(cleanTelegramError(json.description, "Telegram publish failed"));
+      }
+      return { platformPostId: String(json.result.message_id) };
+    }
+
+    if (kind === "gif" && items[0]) {
+      const json = await telegramApi<{ message_id?: number }>(
+        input.accessToken,
+        "sendAnimation",
+        {
+          chat_id: input.platformId,
+          animation: items[0].url,
+          caption: input.content.slice(0, 1024),
+        },
+      );
+      if (!json.ok || json.result?.message_id == null) {
+        throw new Error(cleanTelegramError(json.description, "Telegram publish failed"));
+      }
+      return { platformPostId: String(json.result.message_id) };
+    }
+
+    const photo = items[0]?.url;
     const endpoint = photo ? "sendPhoto" : "sendMessage";
     const body = photo
       ? {

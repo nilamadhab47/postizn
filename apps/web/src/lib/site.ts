@@ -19,8 +19,11 @@ export const SITE_KEYWORDS = [
   "postN",
 ];
 
+export const PRODUCTION_SITE_URL = "https://www.postind.xyz";
+
 export const SITE_URL = (
   process.env.NEXT_PUBLIC_SITE_URL ||
+  (process.env.NODE_ENV === "production" ? PRODUCTION_SITE_URL : "") ||
   (process.env.VERCEL_PROJECT_PRODUCTION_URL
     ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
     : "") ||

@@ -1,11 +1,11 @@
 "use client";
 
-import { motion, useScroll, useTransform } from "motion/react";
+import { motion, useTransform } from "motion/react";
 import { ArrowRight, Mail } from "lucide-react";
 import { useRef } from "react";
 import { ChannelIcon } from "@/components/accounts/channel-icons";
 import { IconGlobe } from "./icon-globe";
-import { useIsDesktop } from "./hero";
+import { useIsDesktop, usePinProgress } from "./hero";
 import { ShimmerButton } from "./motion-bits";
 import { WaitlistForm } from "./waitlist-form";
 
@@ -77,17 +77,14 @@ export function CtaSection({ waitlistMode }: { waitlistMode: boolean }) {
 
   // Pinned finale: the globe loads huge and centered, then shrinks to the
   // right while the closing pitch slides in from the left. All transforms
-  // finish inside the pinned range (offset "end end").
-  const { scrollYProgress } = useScroll({
-    target: ref,
-    offset: ["start start", "end end"],
-  });
+  // finish inside the pinned range.
+  const progress = usePinProgress(ref);
 
-  const globeScale = useTransform(scrollYProgress, [0.05, 0.45], [1.25, 0.95]);
-  const globeX = useTransform(scrollYProgress, [0.05, 0.45], ["0vw", "24vw"]);
-  const textOpacity = useTransform(scrollYProgress, [0.2, 0.45], [0, 1]);
-  const textX = useTransform(scrollYProgress, [0.2, 0.48], [-70, 0]);
-  const introOpacity = useTransform(scrollYProgress, [0, 0.14], [1, 0]);
+  const globeScale = useTransform(progress, [0.05, 0.45], [1.25, 0.95]);
+  const globeX = useTransform(progress, [0.05, 0.45], ["0vw", "24vw"]);
+  const textOpacity = useTransform(progress, [0.2, 0.45], [0, 1]);
+  const textX = useTransform(progress, [0.2, 0.48], [-70, 0]);
+  const introOpacity = useTransform(progress, [0, 0.14], [1, 0]);
 
   if (!isDesktop) {
     // Mobile: static — heading and form first, globe below.

@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, useScroll, useTransform } from "motion/react";
+import { motion, useMotionValue, useTransform } from "motion/react";
 import { ArrowRight, Clock } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ComposeDemo } from "./live-demo";
@@ -138,47 +138,69 @@ function DemoCta({ waitlistMode }: { waitlistMode: boolean }) {
   );
 }
 
+/**
+ * Progress (0→1) through a pinned section's scroll range. Owns the math via
+ * getBoundingClientRect instead of useScroll's cached offset measurement,
+ * which was drifting out of sync with the real scroll position (black
+ * screens / ghost text mid-scroll).
+ */
+export function usePinProgress(ref: React.RefObject<HTMLDivElement | null>) {
+  const progress = useMotionValue(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const total = el.offsetHeight - window.innerHeight;
+      const scrolled = -el.getBoundingClientRect().top;
+      progress.set(total > 0 ? Math.min(1, Math.max(0, scrolled / total)) : 0);
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [progress, ref]);
+  return progress;
+}
+
 export function Hero({ waitlistMode }: { waitlistMode: boolean }) {
   const isDesktop = useIsDesktop();
   const ref = useRef<HTMLDivElement>(null);
+  const progress = usePinProgress(ref);
 
-  // ["start start", "end end"]: progress 0 → pin starts, 1 → pin releases.
-  // Every phase below lives entirely inside the pinned range, so nothing
-  // animates while the section is scrolling away (the old jank).
-  const { scrollYProgress } = useScroll({
-    target: ref,
-    offset: ["start start", "end end"],
-  });
-
-  // Act 1 — pitch black, only the question. It is fully gone by 0.20,
-  // BEFORE the demo starts at 0.26 — the phases never overlap, and the
-  // visibility gate below removes it from paint entirely (the demo card is
-  // translucent glass, so a merely-faded question would ghost through it).
-  const qOpacity = useTransform(scrollYProgress, [0.08, 0.2], [1, 0]);
-  const qScale = useTransform(scrollYProgress, [0.08, 0.2], [1, 0.93]);
-  const qY = useTransform(scrollYProgress, [0.08, 0.2], [0, -60]);
-  const qBlur = useTransform(
-    scrollYProgress,
-    [0.08, 0.2],
-    ["blur(0px)", "blur(14px)"],
-  );
-  const qVisibility = useTransform(scrollYProgress, (v) =>
-    v >= 0.21 ? ("hidden" as const) : ("visible" as const),
+  // Act 1 — pitch black, only the question. Fully gone by 0.26, BEFORE the
+  // demo starts at 0.3 — the phases never overlap, and the visibility gate
+  // removes it from paint entirely (the demo card is translucent glass, so a
+  // merely-faded question would ghost through it).
+  const qOpacity = useTransform(progress, [0.1, 0.26], [1, 0]);
+  const qScale = useTransform(progress, [0.1, 0.26], [1, 0.93]);
+  const qY = useTransform(progress, [0.1, 0.26], [0, -60]);
+  const qBlur = useTransform(progress, [0.1, 0.26], ["blur(0px)", "blur(14px)"]);
+  const qVisibility = useTransform(progress, (v) =>
+    v >= 0.27 ? ("hidden" as const) : ("visible" as const),
   );
 
-  // Act 2 — the question is gone; the demo alone in the dark.
-  const dOpacity = useTransform(scrollYProgress, [0.26, 0.4], [0, 1]);
-  const dScale = useTransform(scrollYProgress, [0.26, 0.52], [0.8, 1]);
-  const dY = useTransform(scrollYProgress, [0.26, 0.52], [140, 0]);
+  // Act 2 — the demo AND its title arrive together, attached.
+  const dOpacity = useTransform(progress, [0.3, 0.46], [0, 1]);
+  const dScale = useTransform(progress, [0.3, 0.54], [0.8, 1]);
+  const dY = useTransform(progress, [0.3, 0.54], [140, 0]);
+  const titleOpacity = useTransform(progress, [0.34, 0.5], [0, 1]);
+  const titleY = useTransform(progress, [0.34, 0.5], [24, 0]);
 
-  // Act 3 — the reveal: auroras + nav fade in, the question returns as the
-  // hero heading above the demo, CTA appears below.
-  const revealOpacity = useTransform(scrollYProgress, [0.55, 0.7], [0, 1]);
-  const titleOpacity = useTransform(scrollYProgress, [0.58, 0.72], [0, 1]);
-  const titleY = useTransform(scrollYProgress, [0.58, 0.72], [24, 0]);
-  const ctaOpacity = useTransform(scrollYProgress, [0.62, 0.76], [0, 1]);
+  // Act 3 — the reveal: auroras + nav fade in, CTA appears. Everything is
+  // fully on screen by 0.72; the rest is a short dwell before the unpin.
+  const revealOpacity = useTransform(progress, [0.56, 0.7], [0, 1]);
+  const ctaOpacity = useTransform(progress, [0.58, 0.72], [0, 1]);
 
-  const hintOpacity = useTransform(scrollYProgress, [0.45, 0.55], [1, 0]);
+  const hintOpacity = useTransform(progress, [0.48, 0.56], [1, 0]);
 
   if (!isDesktop) {
     // Mobile: same story, normal flow — no pinning.
@@ -200,7 +222,7 @@ export function Hero({ waitlistMode }: { waitlistMode: boolean }) {
   }
 
   return (
-    <section ref={ref} id="demo" className="relative h-[320vh]">
+    <section ref={ref} id="demo" className="relative h-[240vh]">
       <div className="sticky top-0 flex h-screen items-center justify-center overflow-hidden bg-black px-6">
         {/* Act 3 backdrop: the real site (auroras + dot grid) fades in over black */}
         <motion.div

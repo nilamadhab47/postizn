@@ -18,11 +18,12 @@ export function LandingNav({ waitlistMode }: { waitlistMode: boolean }) {
   const border = useTransform(scrollY, [0, 120], ["rgba(74,63,99,0)", "rgba(74,63,99,0.6)"]);
 
   // Desktop: the nav stays hidden during the black cinematic intro and slides
-  // in when the site "reveals" (past ~1.15 viewport heights of scroll).
+  // in when the site "reveals" (~0.8 viewport heights of scroll, matching the
+  // hero's Act 3 reveal point in its 240vh pinned range).
   const [revealed, setRevealed] = useState(false);
   useEffect(() => {
     const onScroll = () =>
-      setRevealed(window.scrollY > window.innerHeight * 1.15);
+      setRevealed(window.scrollY > window.innerHeight * 0.8);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);

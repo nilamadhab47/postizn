@@ -54,24 +54,25 @@ async function notify(email: string) {
   if (!key) return false;
 
   const resend = new Resend(key);
-  const from = process.env.RESEND_FROM?.trim() || "postN <onboarding@resend.dev>";
+  const from = process.env.RESEND_FROM?.trim() || "postN <hello@postind.xyz>";
   const founder = process.env.WAITLIST_NOTIFY_EMAIL?.trim() || CONTACT_EMAIL;
 
   const jobs = [
     resend.emails.send({
       from,
       to: founder,
+      replyTo: email,
       subject: `Waitlist: ${email}`,
       text: `${email} joined the ${SITE_NAME} waitlist.\n${SITE_URL}`,
     }),
   ];
 
-  const canConfirmSubscribers = !from.includes("resend.dev");
-  if (canConfirmSubscribers) {
+  if (!from.includes("resend.dev")) {
     jobs.push(
       resend.emails.send({
         from,
         to: email,
+        replyTo: founder,
         subject: "You're on the postN waitlist",
         text: `You're in. We'll mail you when postN opens — one composer for LinkedIn, X, Telegram, Slack, Discord and Dev.to, scheduled in IST.\n\n${SITE_URL}`,
       }),

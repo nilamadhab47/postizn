@@ -38,6 +38,7 @@ export const X_HANDLE = "MadhabCoder";
 export const CONTACT_EMAIL = "nilamadhab47@gmail.com";
 export const GITHUB_URL = "https://github.com/nilamadhab47/postizn";
 export const X_URL = `https://x.com/${X_HANDLE}`;
+export const LINKEDIN_URL = "https://www.linkedin.com/in/nilamadhabsenapati";
 
 /**
  * Server-only. Production hides Sign in and shows the waitlist.

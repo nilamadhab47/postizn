@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
-import { CONTACT_EMAIL, SITE_NAME, SITE_URL } from "@/lib/site";
+import { CONTACT_EMAIL } from "@/lib/site";
+import {
+  waitlistFounderHtml,
+  waitlistFounderSubject,
+  waitlistFounderText,
+  waitlistWelcomeHtml,
+  waitlistWelcomeSubject,
+  waitlistWelcomeText,
+} from "@/lib/waitlist-email";
 
 export const runtime = "nodejs";
 
@@ -62,8 +70,9 @@ async function notify(email: string) {
       from,
       to: founder,
       replyTo: email,
-      subject: `Waitlist: ${email}`,
-      text: `${email} joined the ${SITE_NAME} waitlist.\n${SITE_URL}`,
+      subject: waitlistFounderSubject(email),
+      text: waitlistFounderText(email),
+      html: waitlistFounderHtml(email),
     }),
   ];
 
@@ -73,8 +82,9 @@ async function notify(email: string) {
         from,
         to: email,
         replyTo: founder,
-        subject: "You're on the postN waitlist",
-        text: `You're in. We'll mail you when postN opens — one composer for every platform your audience lives on, scheduled for the moment they're actually awake.\n\n${SITE_URL}`,
+        subject: waitlistWelcomeSubject(),
+        text: waitlistWelcomeText(),
+        html: waitlistWelcomeHtml(),
       }),
     );
   }

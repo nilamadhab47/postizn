@@ -4,6 +4,7 @@ import { motion, useTransform } from "motion/react";
 import { ArrowRight, Mail } from "lucide-react";
 import { useRef } from "react";
 import { ChannelIcon } from "@/components/accounts/channel-icons";
+import { LINKEDIN_URL } from "@/lib/site";
 import { IconGlobe } from "./icon-globe";
 import { useIsDesktop, usePinProgress } from "./hero";
 import { ShimmerButton } from "./motion-bits";
@@ -17,6 +18,14 @@ function XGlyph({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
       <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24h-6.66l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.45-6.231Zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77Z" />
+    </svg>
+  );
+}
+
+function LinkedInGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
+      <path d="M20.45 20.45h-3.55v-5.57c0-1.33-.02-3.04-1.85-3.04-1.86 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12ZM7.12 20.45H3.56V9h3.56v11.45ZM22.23 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.46c.98 0 1.77-.78 1.77-1.73V1.73C24 .77 23.21 0 22.23 0Z" />
     </svg>
   );
 }
@@ -189,6 +198,15 @@ export function LandingFooter({ waitlistMode }: { waitlistMode: boolean }) {
                 className="grid size-9 place-items-center rounded-xl border border-line/60 text-muted transition-colors hover:border-accent/60 hover:text-foreground"
               >
                 <XGlyph className="size-3.5" />
+              </a>
+              <a
+                href={LINKEDIN_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="LinkedIn"
+                className="grid size-9 place-items-center rounded-xl border border-line/60 text-muted transition-colors hover:border-accent/60 hover:text-foreground"
+              >
+                <LinkedInGlyph className="size-4" />
               </a>
               <a
                 href={`mailto:${EMAIL}`}

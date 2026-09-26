@@ -10,7 +10,6 @@ import {
   platformCharCount,
   type ComposePlatform,
 } from "@/lib/compose-text";
-import { Reveal } from "./motion-bits";
 
 type Row = {
   platform: ComposePlatform;
@@ -48,7 +47,11 @@ function CursorArrow() {
   );
 }
 
-export function LiveDemo() {
+/**
+ * The postN composer, playing itself: a ghost cursor picks channels, types,
+ * polishes with Claude, and publishes — looping while on screen.
+ */
+export function ComposeDemo({ className = "" }: { className?: string }) {
   const [text, setText] = useState("");
   const [selected, setSelected] = useState<Record<string, boolean>>(
     Object.fromEntries(ROWS.map((r) => [r.platform, START.has(r.platform)])),
@@ -190,31 +193,10 @@ export function LiveDemo() {
   }, []);
 
   return (
-    <section id="demo" className="relative mx-auto max-w-6xl px-6 py-28">
-      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="aurora-2 absolute -left-24 top-1/4 h-[360px] w-[360px] rounded-full bg-accent-2/12 blur-[110px]" />
-        <div className="aurora-3 absolute -right-20 bottom-1/4 h-[320px] w-[320px] rounded-full bg-accent/12 blur-[110px]" />
-      </div>
-
-      <Reveal className="relative text-center">
-        <p className="text-sm font-bold uppercase tracking-[0.3em] text-accent">
-          Watch it work
-        </p>
-        <h2 className="mt-4 text-5xl font-extrabold tracking-tight md:text-6xl">
-          One draft. Every feed. <span className="gradient-text">Live.</span>
-        </h2>
-        <p className="mx-auto mt-5 max-w-lg text-lg text-muted">
-          This is the actual postN composer — playing itself. Pick channels,
-          write with Claude, publish to all six at once.
-        </p>
-      </Reveal>
-
-      {/* The composer replica */}
-      <Reveal delay={0.1}>
-        <div
-          ref={shellRef}
-          className="relative mt-14 overflow-hidden rounded-3xl border border-line/60 bg-card/70 shadow-2xl backdrop-blur"
-        >
+    <div
+      ref={shellRef}
+      className={`relative overflow-hidden rounded-3xl border border-line/60 bg-card/70 shadow-2xl backdrop-blur ${className}`}
+    >
           {/* Ghost cursor */}
           <motion.div
             style={{ x: sx, y: sy }}
@@ -434,10 +416,8 @@ export function LiveDemo() {
                 ))}
               </div>
             </div>
-          </div>
-        </div>
-      </Reveal>
-    </section>
+      </div>
+    </div>
   );
 }
 

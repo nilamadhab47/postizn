@@ -1,9 +1,12 @@
 "use client";
 
-import { motion } from "motion/react";
+import { motion, useScroll, useTransform } from "motion/react";
 import { ArrowRight, Mail } from "lucide-react";
+import { useRef } from "react";
 import { ChannelIcon } from "@/components/accounts/channel-icons";
-import { Reveal, ShimmerButton } from "./motion-bits";
+import { IconGlobe } from "./icon-globe";
+import { useIsDesktop } from "./hero";
+import { ShimmerButton } from "./motion-bits";
 import { WaitlistForm } from "./waitlist-form";
 
 const GITHUB_URL = "https://github.com/nilamadhab47/postizn";
@@ -26,63 +29,128 @@ function GithubGlyph({ className }: { className?: string }) {
   );
 }
 
-export function CtaSection({ waitlistMode }: { waitlistMode: boolean }) {
+function CtaCopy({ waitlistMode }: { waitlistMode: boolean }) {
   return (
-    <section id="waitlist" className="relative overflow-hidden px-6 py-32">
-      {/* Aurora glow */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="aurora-1 absolute left-1/4 top-1/3 h-[420px] w-[520px] rounded-full bg-accent/14 blur-[120px]" />
-        <div className="aurora-2 absolute right-1/4 top-1/2 h-[360px] w-[420px] rounded-full bg-[#ff4ecd]/10 blur-[120px]" />
-        <div className="aurora-3 absolute bottom-0 left-1/2 h-[300px] w-[400px] -translate-x-1/2 rounded-full bg-accent-2/14 blur-[110px]" />
+    <>
+      <h2 className="text-5xl font-extrabold leading-[1.05] tracking-tight md:text-6xl">
+        Your next post deserves{" "}
+        <span className="gradient-text">every feed.</span>
+      </h2>
+      <p className="mt-6 max-w-lg text-lg text-muted">
+        {waitlistMode
+          ? "36 networks on that globe — six live today, the rest on the way. Drop your email and be first in when postN opens."
+          : "Stop rewriting the same update six times. Start free — no card, no trial countdown, just posting."}
+      </p>
+      <div className="mt-9 flex w-full justify-center lg:justify-start">
+        {waitlistMode ? (
+          <WaitlistForm id="cta-waitlist" />
+        ) : (
+          <ShimmerButton href="/register" className="px-10 py-4 text-base">
+            Get started free
+            <ArrowRight className="size-5 transition-transform group-hover:translate-x-1" />
+          </ShimmerButton>
+        )}
       </div>
+      <div className="mt-10 flex items-center justify-center gap-3 lg:justify-start">
+        {["linkedin", "twitter", "telegram", "slack", "discord", "devto"].map(
+          (slug, i) => (
+            <motion.div
+              key={slug}
+              initial={{ opacity: 0, y: 12 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.3 + i * 0.08 }}
+              whileHover={{ y: -6, scale: 1.15 }}
+            >
+              <ChannelIcon slug={slug} className="size-8 rounded-lg" />
+            </motion.div>
+          ),
+        )}
+      </div>
+    </>
+  );
+}
 
-      <div className="relative mx-auto flex max-w-4xl flex-col items-center text-center">
-        <Reveal>
-          <h2 className="text-5xl font-extrabold leading-tight tracking-tight md:text-7xl">
-            Your next post deserves{" "}
-            <span className="gradient-text">every feed.</span>
-          </h2>
-        </Reveal>
-        <Reveal delay={0.15}>
-          <p className="mt-6 max-w-lg text-lg text-muted">
-            {waitlistMode
-              ? "We're opening soon. Drop your email and be first in when postN goes live — IST scheduling, six channels, one draft."
-              : "Stop rewriting the same update six times. Start free — no card, no trial countdown, just posting."}
-          </p>
-        </Reveal>
-        <Reveal delay={0.3}>
-          <div className="mt-10 flex justify-center">
-            {waitlistMode ? (
-              <WaitlistForm id="cta-waitlist" />
-            ) : (
-              <ShimmerButton href="/register" className="px-10 py-4 text-base">
-                Get started free
-                <ArrowRight className="size-5 transition-transform group-hover:translate-x-1" />
-              </ShimmerButton>
-            )}
-          </div>
-        </Reveal>
+export function CtaSection({ waitlistMode }: { waitlistMode: boolean }) {
+  const isDesktop = useIsDesktop();
+  const ref = useRef<HTMLDivElement>(null);
 
-        <Reveal delay={0.45}>
-          <div className="mt-12 flex items-center gap-3">
-            {["linkedin", "twitter", "telegram", "slack", "discord", "devto"].map(
-              (slug, i) => (
-                <motion.div
-                  key={slug}
-                  initial={{ opacity: 0, y: 12 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.5 + i * 0.08 }}
-                  whileHover={{ y: -6, scale: 1.15 }}
-                >
-                  <ChannelIcon slug={slug} className="size-8 rounded-lg" />
-                </motion.div>
-              ),
-            )}
+  // Pinned finale: the globe loads huge and centered, then shrinks to the
+  // right while the closing pitch slides in from the left. All transforms
+  // finish inside the pinned range (offset "end end").
+  const { scrollYProgress } = useScroll({
+    target: ref,
+    offset: ["start start", "end end"],
+  });
+
+  const globeScale = useTransform(scrollYProgress, [0.05, 0.45], [1.25, 0.95]);
+  const globeX = useTransform(scrollYProgress, [0.05, 0.45], ["0vw", "24vw"]);
+  const textOpacity = useTransform(scrollYProgress, [0.2, 0.45], [0, 1]);
+  const textX = useTransform(scrollYProgress, [0.2, 0.48], [-70, 0]);
+  const introOpacity = useTransform(scrollYProgress, [0, 0.14], [1, 0]);
+
+  if (!isDesktop) {
+    // Mobile: static — heading and form first, globe below.
+    return (
+      <section id="waitlist" className="relative overflow-hidden px-6 py-28">
+        <CtaAurora />
+        <div className="relative z-10 mx-auto flex max-w-4xl flex-col items-center text-center">
+          <CtaCopy waitlistMode={waitlistMode} />
+          <div className="mt-12">
+            <IconGlobe size={300} iconSize={36} />
           </div>
-        </Reveal>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section ref={ref} id="waitlist" className="relative h-[240vh]">
+      <div className="sticky top-0 flex h-screen items-center overflow-hidden px-6">
+        <CtaAurora />
+
+        <div className="relative z-10 mx-auto w-full max-w-7xl">
+          {/* Copy slides in from the left */}
+          <motion.div
+            style={{ opacity: textOpacity, x: textX }}
+            className="flex flex-col items-start text-left lg:max-w-[46%]"
+          >
+            <CtaCopy waitlistMode={waitlistMode} />
+          </motion.div>
+
+          {/* Globe: centered → right */}
+          <motion.div
+            style={{ x: globeX, scale: globeScale }}
+            className="pointer-events-none absolute inset-0 flex items-center justify-center"
+          >
+            <div className="pointer-events-auto">
+              <IconGlobe size={480} iconSize={44} />
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Intro line — visible while the globe is alone */}
+        <motion.div
+          style={{ opacity: introOpacity }}
+          className="pointer-events-none absolute inset-x-0 bottom-14 z-20 flex flex-col items-center gap-2 text-center"
+        >
+          <span className="text-sm font-bold uppercase tracking-[0.35em] text-muted/80">
+            36 networks · one postN
+          </span>
+          <span className="text-xs text-muted/60">keep scrolling</span>
+        </motion.div>
       </div>
     </section>
+  );
+}
+
+function CtaAurora() {
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+      <div className="aurora-1 absolute left-1/4 top-1/3 h-[420px] w-[520px] rounded-full bg-accent/14 blur-[120px]" />
+      <div className="aurora-2 absolute right-1/4 top-1/2 h-[360px] w-[420px] rounded-full bg-[#ff4ecd]/10 blur-[120px]" />
+      <div className="aurora-3 absolute bottom-0 left-1/2 h-[300px] w-[400px] -translate-x-1/2 rounded-full bg-accent-2/14 blur-[110px]" />
+    </div>
   );
 }
 

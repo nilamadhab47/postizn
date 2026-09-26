@@ -3,7 +3,6 @@
 import { LandingNav } from "./landing-nav";
 import { Hero } from "./hero";
 import { ChannelMarquee } from "./channel-marquee";
-import { LiveDemo } from "./live-demo";
 import { Features } from "./features";
 import { HowItWorks } from "./how-it-works";
 import { Stats } from "./stats";
@@ -16,7 +15,6 @@ export function LandingPage({ waitlistMode }: { waitlistMode: boolean }) {
       <LandingNav waitlistMode={waitlistMode} />
       <Hero waitlistMode={waitlistMode} />
       <ChannelMarquee />
-      <LiveDemo />
       <Features />
       <HowItWorks />
       <Stats />

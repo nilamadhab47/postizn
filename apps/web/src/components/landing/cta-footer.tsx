@@ -38,8 +38,8 @@ function CtaCopy({ waitlistMode }: { waitlistMode: boolean }) {
       </h2>
       <p className="mt-6 max-w-lg text-lg text-muted">
         {waitlistMode
-          ? "36 networks on that globe — six live today, the rest on the way. Drop your email and be first in when postN opens."
-          : "Stop rewriting the same update six times. Start free — no card, no trial countdown, just posting."}
+          ? "That globe isn't decoration — it's the roadmap. Drop your email and be first in when postN opens the doors."
+          : "Stop rewriting the same update for every network. Start free — no card, no trial countdown, just posting."}
       </p>
       <div className="mt-9 flex w-full justify-center lg:justify-start">
         {waitlistMode ? (
@@ -135,7 +135,7 @@ export function CtaSection({ waitlistMode }: { waitlistMode: boolean }) {
           className="pointer-events-none absolute inset-x-0 bottom-14 z-20 flex flex-col items-center gap-2 text-center"
         >
           <span className="text-sm font-bold uppercase tracking-[0.35em] text-muted/80">
-            36 networks · one postN
+            every network · one postN
           </span>
           <span className="text-xs text-muted/60">keep scrolling</span>
         </motion.div>
@@ -170,8 +170,9 @@ export function LandingFooter({ waitlistMode }: { waitlistMode: boolean }) {
               </span>
             </a>
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-muted">
-              India-first social scheduler. Write once, publish everywhere, and
-              schedule in IST. Made for founders and D2C brands 🇮🇳
+              Write once, publish everywhere, and schedule for when your
+              audience is actually awake. Proudly built in India, made for
+              everywhere 🇮🇳
             </p>
             <div className="mt-5 flex items-center gap-3">
               <a

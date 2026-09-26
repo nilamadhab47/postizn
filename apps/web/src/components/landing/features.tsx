@@ -59,7 +59,7 @@ export function Features() {
           label="Planning"
           icon={CalendarClock}
           title="Schedule to every channel at once"
-          body="Write a post once, pick your channels, and set the time in IST. See the whole week on a visual calendar before anything goes out."
+          body="Write a post once, pick your channels, and set the time — in your timezone, no UTC math. See the whole week on a visual calendar before anything goes out."
           className="lg:col-span-2"
           layout="row"
           mock={<CalendarMock />}
@@ -223,7 +223,7 @@ function CalendarMock() {
   return (
     <Panel>
       <div className="mb-2 flex items-center justify-between px-1">
-        <span className="text-xs font-bold text-foreground/80">This week · IST</span>
+        <span className="text-xs font-bold text-foreground/80">This week</span>
         <span className="flex items-center gap-1 text-muted">
           <span className="grid size-5 place-items-center rounded-md border border-line/60 text-[10px]">‹</span>
           <span className="grid size-5 place-items-center rounded-md border border-line/60 text-[10px]">›</span>
@@ -272,13 +272,13 @@ function AiChatMock() {
           <Sparkles className="size-3 text-accent-2" />
         </span>
         <div className="rounded-lg border border-accent-2/40 bg-accent-2/10 p-2 text-[11px] leading-snug text-foreground/90">
-          We just shipped scheduled publishing 🚀 One draft → six feeds.{" "}
+          We just shipped scheduled publishing 🚀 One draft → every feed.{" "}
           <span className="font-bold">Zero copy-paste.</span>
         </div>
       </div>
       <div className="mt-2.5 flex items-center justify-between">
         <div className="flex gap-1">
-          {["Shorten", "Hashtags", "IST"].map((t) => (
+          {["Shorten", "Hashtags", "Best time"].map((t) => (
             <span
               key={t}
               className="rounded-md border border-line/60 px-1.5 py-0.5 text-[9px] font-semibold text-muted"

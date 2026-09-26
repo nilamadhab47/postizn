@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
-export const alt = "postN — Plan, generate, schedule & review from one IST calendar.";
+export const alt = "postN — Write once. Post everywhere.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -45,18 +45,18 @@ export default function TwitterImage() {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           <div style={{ fontSize: 68, fontWeight: 800, lineHeight: 1.05, letterSpacing: -2 }}>
-            Plan, generate,
+            Write once.
             <br />
-            schedule & review.
+            Post everywhere.
           </div>
           <div style={{ fontSize: 28, color: "rgba(255,246,232,0.72)", maxWidth: 820, lineHeight: 1.35 }}>
-            India-first social scheduler. One draft → LinkedIn, X, Telegram, Slack, Discord and Dev.to. IST native.
+            One AI-assisted draft → every platform your audience lives on. Zero copy-paste.
           </div>
         </div>
 
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 22, color: "rgba(255,246,232,0.55)" }}>
-          <span>6 channels live · 30+ on the way</span>
-          <span>Built for Indian founders</span>
+          <span>AI drafts · one calendar · reliable queue</span>
+          <span>Built by founders, for founders</span>
         </div>
       </div>
     ),

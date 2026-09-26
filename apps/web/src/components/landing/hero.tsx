@@ -23,9 +23,9 @@ function IstClock() {
   const [now, setNow] = useState<string>("");
   useEffect(() => {
     const tick = () =>
+      // The visitor's own clock — postN schedules in whatever timezone you think in.
       setNow(
-        new Date().toLocaleTimeString("en-IN", {
-          timeZone: "Asia/Kolkata",
+        new Date().toLocaleTimeString(undefined, {
           hour: "2-digit",
           minute: "2-digit",
           second: "2-digit",
@@ -66,15 +66,15 @@ function QuestionCopy() {
     <>
       <div className="flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-4 py-1.5 text-xs font-semibold text-accent backdrop-blur">
         <Clock className="size-3.5" />
-        IST <IstClock /> · A question for every founder
+        <IstClock /> · a question for every founder
       </div>
       <h1 className="mt-8 max-w-5xl text-5xl font-extrabold leading-[1.04] tracking-tight text-foreground md:text-8xl">
-        How do you show up on{" "}
-        <span className="gradient-text">six platforms</span> at once?
+        How many tabs does it take to{" "}
+        <span className="gradient-text">announce one launch?</span>
       </h1>
       <p className="mt-7 max-w-2xl text-lg font-medium text-foreground/75 md:text-2xl">
-        Copy. Paste. Reformat. Repeat — LinkedIn, X, Telegram, Slack, Discord,
-        Dev.to. Every single launch.
+        Copy. Paste. Reformat. Repeat — for every platform your audience lives
+        on. There&apos;s a better way, and you&apos;re scrolling toward it.
       </p>
     </>
   );
@@ -184,8 +184,7 @@ export function Hero({ waitlistMode }: { waitlistMode: boolean }) {
             style={{ opacity: titleOpacity, y: titleY }}
             className="text-center text-3xl font-extrabold tracking-tight md:text-4xl"
           >
-            How do you show up on{" "}
-            <span className="gradient-text">six platforms</span> at once?{" "}
+            One tab. <span className="gradient-text">Every platform.</span>{" "}
             <span className="text-muted">Like this.</span>
           </motion.h2>
           <ComposeDemo className="mt-6" />

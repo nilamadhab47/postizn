@@ -1,21 +1,23 @@
 export const SITE_NAME = "postN";
-export const SITE_TAGLINE = "Plan, generate, schedule & review.";
+export const SITE_TAGLINE = "Write once. Post everywhere.";
 export const SITE_DESCRIPTION =
-  "India-first social scheduler for founders and D2C brands. Write once, publish to LinkedIn, X, Telegram, Slack, Discord and Dev.to, and review every post on one IST calendar.";
+  "The social media scheduler for founders. Write once with AI, publish to LinkedIn, X, Telegram, Slack, Discord, Dev.to and more, and review everything on one calendar. No copy-paste, no tab-juggling.";
 export const SITE_KEYWORDS = [
   "social media scheduler",
-  "India",
-  "IST",
+  "cross-posting tool",
+  "post to all social media at once",
+  "social media management",
+  "content calendar",
+  "AI social media posts",
   "LinkedIn scheduler",
-  "Twitter scheduler",
   "X scheduler",
+  "Twitter scheduler",
   "Telegram",
   "Slack",
   "Discord",
   "Dev.to",
-  "D2C",
+  "Buffer alternative",
   "founders",
-  "AI social posts",
   "postN",
 ];
 

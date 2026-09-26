@@ -8,8 +8,8 @@ export const FAQS: { q: string; a: string }[] = [
     a: "Yes. Join the waitlist now — when we open, you can start scheduling without a card or a trial countdown. Paid plans arrive later for teams and higher volume.",
   },
   {
-    q: "Does scheduling work in IST?",
-    a: "Always. You pick times the way you think — 9:30 PM IST, not UTC math. postN stores everything in UTC internally and shows IST across the whole app.",
+    q: "What about timezones?",
+    a: "You pick times the way you think — 9:30 PM your time, not UTC math. postN stores everything in UTC internally and shows your timezone across the whole app, wherever you are.",
   },
   {
     q: "Can the AI write posts for me?",

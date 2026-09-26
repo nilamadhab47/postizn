@@ -27,9 +27,9 @@ const ROWS: Row[] = [
   { platform: "DEVTO", slug: "devto", label: "Dev.to", handle: "yourbrand" },
 ];
 
-const ROUGH = "shipping scheduled publishing today. one draft, every feed, no more juggling six tabs.";
+const ROUGH = "shipping scheduled publishing today. one draft, every feed, no more juggling tabs.";
 const POLISHED =
-  "We just shipped scheduled publishing 🚀\n\nOne draft → six feeds. Zero copy-paste, zero tab-juggling.\n\nBuilt in India, tuned for IST. Your move, founders.";
+  "We just shipped scheduled publishing 🚀\n\nOne draft → every feed. Zero copy-paste, zero tab-juggling.\n\nScheduled for the exact minute your audience is awake. Your move, founders.";
 
 const START = new Set<string>(["LINKEDIN", "TWITTER", "TELEGRAM"]);
 
@@ -223,7 +223,7 @@ export function ComposeDemo({ className = "" }: { className?: string }) {
             <span className="size-3 rounded-full bg-[#28c840]" />
             <span className="ml-3 text-sm font-bold">Compose</span>
             <span className="ml-auto rounded-lg bg-accent/15 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-accent">
-              IST · 9:30 PM peak
+              9:30 PM · audience peak
             </span>
           </div>
 
@@ -332,7 +332,7 @@ export function ComposeDemo({ className = "" }: { className?: string }) {
                   Shorten for X
                 </span>
                 <span className="rounded-xl border border-line px-3 py-2 text-sm font-semibold text-muted">
-                  India / IST
+                  Best time
                 </span>
                 <span className="rounded-xl border border-line px-3 py-2 text-sm font-semibold text-muted">
                   Hashtags

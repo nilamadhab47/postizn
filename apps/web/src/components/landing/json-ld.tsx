@@ -22,8 +22,8 @@ export function JsonLd() {
           availability: "https://schema.org/PreOrder",
         },
         featureList: [
-          "Schedule posts in IST",
-          "Publish to LinkedIn, X, Telegram, Slack, Discord and Dev.to",
+          "Schedule posts in your timezone",
+          "Publish to LinkedIn, X, Telegram, Slack, Discord, Dev.to and more",
           "AI drafts with Claude",
           "Per-channel live preview",
           "Reliable queue with retries",

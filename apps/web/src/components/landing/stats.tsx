@@ -3,8 +3,8 @@
 import { Counter, Reveal } from "./motion-bits";
 
 const STATS = [
-  { to: 6, suffix: "", label: "channels, one composer" },
-  { to: 100, suffix: "%", label: "IST-native scheduling" },
+  { to: 1, suffix: "", label: "draft, every platform" },
+  { to: 30, suffix: "+", label: "integrations and growing" },
   { to: 30, suffix: "s", label: "from draft to every feed" },
   { to: 0, suffix: "", label: "copy-pastes ever again" },
 ];

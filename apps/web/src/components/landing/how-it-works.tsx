@@ -9,7 +9,7 @@ const STEPS = [
     icon: Link2,
     step: "01",
     title: "Connect your channels",
-    body: "OAuth for LinkedIn and X, tokens for the rest. Two minutes, all six connected.",
+    body: "OAuth for LinkedIn and X, tokens for the rest. Two minutes and every channel you use is connected.",
   },
   {
     icon: PenLine,
@@ -21,7 +21,7 @@ const STEPS = [
     icon: Rocket,
     step: "03",
     title: "Schedule and forget",
-    body: "Pick your IST slot. The queue publishes on the dot and notifies you the moment it lands.",
+    body: "Pick the moment your audience is actually awake. The queue publishes on the dot — in your timezone — and pings you when it lands.",
   },
 ];
 

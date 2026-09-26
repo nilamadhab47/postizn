@@ -74,7 +74,7 @@ async function notify(email: string) {
         to: email,
         replyTo: founder,
         subject: "You're on the postN waitlist",
-        text: `You're in. We'll mail you when postN opens — one composer for LinkedIn, X, Telegram, Slack, Discord and Dev.to, scheduled in IST.\n\n${SITE_URL}`,
+        text: `You're in. We'll mail you when postN opens — one composer for every platform your audience lives on, scheduled for the moment they're actually awake.\n\n${SITE_URL}`,
       }),
     );
   }

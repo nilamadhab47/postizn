@@ -61,21 +61,68 @@ function HeroBackdrop() {
   );
 }
 
+const wordVariant = {
+  hidden: { opacity: 0, y: 30, filter: "blur(10px)" },
+  show: {
+    opacity: 1,
+    y: 0,
+    filter: "blur(0px)",
+    transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] as const },
+  },
+};
+
+/** The landing question, with a staggered blur-rise entrance on page load. */
 function QuestionCopy() {
+  const words = "How many tabs does it take to".split(" ");
   return (
     <>
-      <div className="flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-4 py-1.5 text-xs font-semibold text-accent backdrop-blur">
+      <motion.div
+        initial={{ opacity: 0, y: -14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.15 }}
+        className="flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-4 py-1.5 text-xs font-semibold text-accent backdrop-blur"
+      >
         <Clock className="size-3.5" />
         <IstClock /> · a question for every founder
-      </div>
-      <h1 className="mt-8 max-w-5xl text-5xl font-extrabold leading-[1.04] tracking-tight text-foreground md:text-8xl">
-        How many tabs does it take to{" "}
-        <span className="gradient-text">announce one launch?</span>
-      </h1>
-      <p className="mt-7 max-w-2xl text-lg font-medium text-foreground/75 md:text-2xl">
+      </motion.div>
+      <motion.h1
+        initial="hidden"
+        animate="show"
+        variants={{
+          show: { transition: { staggerChildren: 0.09, delayChildren: 0.35 } },
+        }}
+        className="mt-8 max-w-5xl text-5xl font-extrabold leading-[1.04] tracking-tight text-foreground md:text-8xl"
+      >
+        {words.map((word) => (
+          <motion.span key={word} variants={wordVariant} className="inline-block">
+            {word}&nbsp;
+          </motion.span>
+        ))}
+        <motion.span
+          variants={{
+            hidden: { opacity: 0, y: 30, scale: 0.9, filter: "blur(12px)" },
+            show: {
+              opacity: 1,
+              y: 0,
+              scale: 1,
+              filter: "blur(0px)",
+              transition: { duration: 0.7, ease: [0.22, 1, 0.36, 1] as const },
+            },
+          }}
+          className="gradient-text inline-block"
+        >
+          announce one launch?
+        </motion.span>
+      </motion.h1>
+      <motion.p
+        initial={{ opacity: 0, y: 18 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 1.35, ease: "easeOut" }}
+        className="mt-7 max-w-2xl text-lg font-medium text-foreground/75 md:text-2xl"
+      >
         Copy. Paste. Reformat. Repeat — for every platform your audience lives
         on. There&apos;s a better way, and you&apos;re scrolling toward it.
-      </p>
+      </motion.p>
     </>
   );
 }
@@ -103,15 +150,26 @@ export function Hero({ waitlistMode }: { waitlistMode: boolean }) {
     offset: ["start start", "end end"],
   });
 
-  // Act 1 — pitch black, only the question.
-  const qOpacity = useTransform(scrollYProgress, [0.14, 0.26], [1, 0]);
-  const qScale = useTransform(scrollYProgress, [0.14, 0.26], [1, 0.93]);
-  const qY = useTransform(scrollYProgress, [0.14, 0.26], [0, -60]);
+  // Act 1 — pitch black, only the question. It is fully gone by 0.20,
+  // BEFORE the demo starts at 0.26 — the phases never overlap, and the
+  // visibility gate below removes it from paint entirely (the demo card is
+  // translucent glass, so a merely-faded question would ghost through it).
+  const qOpacity = useTransform(scrollYProgress, [0.08, 0.2], [1, 0]);
+  const qScale = useTransform(scrollYProgress, [0.08, 0.2], [1, 0.93]);
+  const qY = useTransform(scrollYProgress, [0.08, 0.2], [0, -60]);
+  const qBlur = useTransform(
+    scrollYProgress,
+    [0.08, 0.2],
+    ["blur(0px)", "blur(14px)"],
+  );
+  const qVisibility = useTransform(scrollYProgress, (v) =>
+    v >= 0.21 ? ("hidden" as const) : ("visible" as const),
+  );
 
   // Act 2 — the question is gone; the demo alone in the dark.
-  const dOpacity = useTransform(scrollYProgress, [0.24, 0.38], [0, 1]);
-  const dScale = useTransform(scrollYProgress, [0.24, 0.5], [0.8, 1]);
-  const dY = useTransform(scrollYProgress, [0.24, 0.5], [140, 0]);
+  const dOpacity = useTransform(scrollYProgress, [0.26, 0.4], [0, 1]);
+  const dScale = useTransform(scrollYProgress, [0.26, 0.52], [0.8, 1]);
+  const dY = useTransform(scrollYProgress, [0.26, 0.52], [140, 0]);
 
   // Act 3 — the reveal: auroras + nav fade in, the question returns as the
   // hero heading above the demo, CTA appears below.
@@ -154,7 +212,13 @@ export function Hero({ waitlistMode }: { waitlistMode: boolean }) {
 
         {/* Act 1: the question, alone in the dark */}
         <motion.div
-          style={{ opacity: qOpacity, scale: qScale, y: qY }}
+          style={{
+            opacity: qOpacity,
+            scale: qScale,
+            y: qY,
+            filter: qBlur,
+            visibility: qVisibility,
+          }}
           className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center px-6 text-center"
         >
           <QuestionCopy />

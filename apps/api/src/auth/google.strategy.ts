@@ -1,6 +1,6 @@
 /**
- * Parked. Google login is not wired into AuthModule.
- * Re-register GoogleStrategy + GoogleAuthGuard and restore /auth/google routes when OAuth comes back.
+ * Unused. Google login is handled by OauthLoginService (GET /auth/google).
+ * Kept so the Passport strategy can be restored later if needed.
  */
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";

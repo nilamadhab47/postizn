@@ -1,6 +1,14 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { api, type Me } from "@/lib/api";
 
@@ -18,35 +26,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     try {
       const me = await api<Me>("/auth/me");
       setUser(me);
     } catch {
       setUser(null);
-      if (pathname !== "/login" && pathname !== "/") {
+      const path = pathnameRef.current;
+      if (path !== "/login" && path !== "/") {
         router.replace("/login");
       }
     } finally {
       setLoading(false);
     }
-  }
+  }, [router]);
 
-  async function logout() {
+  const logout = useCallback(async () => {
     await api("/auth/logout", { method: "POST" });
     setUser(null);
     router.replace("/login");
-  }
+  }, [router]);
 
   useEffect(() => {
     void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refresh]);
 
   const value = useMemo(
     () => ({ user, loading, refresh, logout }),
-    [user, loading],
+    [user, loading, refresh, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

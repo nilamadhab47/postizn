@@ -1,5 +1,6 @@
-import { CONTACT_EMAIL, SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL } from "@/lib/site";
+import { CONTACT_EMAIL, SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL, WAITLIST_MODE } from "@/lib/site";
 import { FAQS } from "@/lib/faqs";
+import { STUDIO_MONTHLY_INR } from "@/lib/pricing";
 
 export function JsonLd() {
   const graph = {
@@ -16,10 +17,14 @@ export function JsonLd() {
         slogan: SITE_TAGLINE,
         inLanguage: "en-IN",
         offers: {
-          "@type": "Offer",
-          price: "0",
+          "@type": "AggregateOffer",
+          lowPrice: "0",
+          highPrice: String(STUDIO_MONTHLY_INR),
           priceCurrency: "INR",
-          availability: "https://schema.org/PreOrder",
+          offerCount: "4",
+          availability: WAITLIST_MODE
+            ? "https://schema.org/PreOrder"
+            : "https://schema.org/InStock",
         },
         featureList: [
           "Schedule posts in your timezone",

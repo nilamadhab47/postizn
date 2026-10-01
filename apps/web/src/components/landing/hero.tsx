@@ -132,7 +132,7 @@ function DemoCta({ waitlistMode }: { waitlistMode: boolean }) {
     <WaitlistForm id="hero-waitlist" size="sm" />
   ) : (
     <ShimmerButton href="/register">
-      Start posting free
+      Start 14-day trial
       <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
     </ShimmerButton>
   );

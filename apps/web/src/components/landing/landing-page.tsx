@@ -5,6 +5,7 @@ import { Hero } from "./hero";
 import { ChannelMarquee } from "./channel-marquee";
 import { Features } from "./features";
 import { HowItWorks } from "./how-it-works";
+import { Pricing } from "./pricing";
 import { Stats } from "./stats";
 import { Faq } from "./faq";
 import { CtaSection, LandingFooter } from "./cta-footer";
@@ -17,6 +18,7 @@ export function LandingPage({ waitlistMode }: { waitlistMode: boolean }) {
       <ChannelMarquee />
       <Features />
       <HowItWorks />
+      <Pricing waitlistMode={waitlistMode} />
       <Stats />
       <Faq />
       <CtaSection waitlistMode={waitlistMode} />

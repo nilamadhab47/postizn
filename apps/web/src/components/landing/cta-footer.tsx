@@ -47,15 +47,15 @@ function CtaCopy({ waitlistMode }: { waitlistMode: boolean }) {
       </h2>
       <p className="mt-6 max-w-lg text-lg text-muted">
         {waitlistMode
-          ? "That globe isn't decoration — it's the roadmap. Drop your email and be first in when postN opens the doors."
-          : "Stop rewriting the same update for every network. Start free — no card, no trial countdown, just posting."}
+          ? "That globe isn't decoration — it's the roadmap. Drop your email. When we open, you get 14 days on LinkedIn and X — no card."
+          : "Stop rewriting the same update for every network. Start 14 days on LinkedIn and X — no card. A card unlocks Pro at ₹799/month."}
       </p>
       <div className="mt-9 flex w-full justify-center lg:justify-start">
         {waitlistMode ? (
           <WaitlistForm id="cta-waitlist" />
         ) : (
           <ShimmerButton href="/register" className="px-10 py-4 text-base">
-            Get started free
+            Start 14-day trial
             <ArrowRight className="size-5 transition-transform group-hover:translate-x-1" />
           </ShimmerButton>
         )}
@@ -225,6 +225,7 @@ export function LandingFooter({ waitlistMode }: { waitlistMode: boolean }) {
               { label: "Features", href: "/#features" },
               { label: "Live demo", href: "/#demo" },
               { label: "How it works", href: "/#how" },
+              { label: "Pricing", href: "/#pricing" },
               { label: "FAQ", href: "/#faq" },
             ]}
           />
@@ -246,7 +247,7 @@ export function LandingFooter({ waitlistMode }: { waitlistMode: boolean }) {
               title="Account"
               links={[
                 { label: "Sign in", href: "/login" },
-                { label: "Start free", href: "/register" },
+                { label: "Start 14-day trial", href: "/register" },
               ]}
             />
           )}

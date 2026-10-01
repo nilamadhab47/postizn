@@ -7,7 +7,8 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { AppHeader } from "@/components/layout/app-header";
 import { channelLabel, formatIst } from "@/lib/platforms";
-import type { Me } from "@/lib/api";
+import { BillingPanel } from "@/components/settings/billing-panel";
+import { UserAvatar } from "@/components/layout/user-avatar";
 
 const TABS = [
   { id: "account", label: "Account" },
@@ -91,17 +92,23 @@ export function SettingsBoard() {
 
 function AccountPanel() {
   const { user } = useAuth();
-  const entitlements = user?.entitlements;
-  const plan = user?.plan ?? "FREE";
+  const access = user?.entitlements?.access ?? user?.plan ?? "FREE";
 
   return (
     <div>
-      <div className="max-w-lg rounded-xl border border-line bg-card p-5 text-base">
-        <Row label="Name" value={user?.name ?? "—"} />
-        <Row label="Email" value={user?.email ?? "—"} />
-        <Row label="Plan" value={plan} />
-        <Row label="Timezone" value={user?.timezone ?? "Asia/Kolkata"} />
-      </div>
+      <Link
+        href="/profile"
+        className="flex max-w-lg items-center gap-4 rounded-3xl border border-line bg-card/60 p-5 hover:border-accent/50"
+      >
+        <UserAvatar name={user?.name} image={user?.image} className="size-14 text-lg" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-lg font-bold">{user?.name ?? "Your profile"}</span>
+          <span className="mt-0.5 block truncate text-sm text-muted">{user?.email}</span>
+          <span className="mt-2 inline-block text-sm font-semibold text-accent">
+            Open profile
+          </span>
+        </span>
+      </Link>
 
       <h2
         id="plan"
@@ -109,32 +116,7 @@ function AccountPanel() {
       >
         Plan
       </h2>
-      <div className="mt-4 grid max-w-3xl gap-4 sm:grid-cols-2">
-        <PlanCard
-          name="FREE"
-          current={plan === "FREE"}
-          points={[
-            "LinkedIn + X",
-            `${entitlements?.channelLimit && plan === "FREE" ? entitlements.channelLimit : 2} channels`,
-            "30 posts / month",
-            "3 test image gens",
-          ]}
-        />
-        <PlanCard
-          name="PRO"
-          current={plan === "PRO"}
-          points={[
-            "Everything on FREE",
-            "LinkedIn Page, Telegram, Slack, Discord, Dev.to",
-            "20 channels",
-            "Unlimited image gens",
-          ]}
-        />
-      </div>
-      <p className="mt-4 max-w-lg text-sm text-muted">
-        New accounts start on FREE. Razorpay checkout for PRO comes after
-        publish works. Your founder login is PRO so we can test every channel.
-      </p>
+      <BillingPanel access={access} />
     </div>
   );
 }
@@ -393,43 +375,3 @@ function queueWhen(post: QueuePost) {
   return formatIst(post.publishedAt || post.createdAt);
 }
 
-function PlanCard({
-  name,
-  current,
-  points,
-}: {
-  name: Me["plan"];
-  current: boolean;
-  points: string[];
-}) {
-  return (
-    <div
-      className={`rounded-xl border p-5 ${
-        current ? "border-accent bg-card" : "border-line bg-card"
-      }`}
-    >
-      <div className="flex items-center justify-between">
-        <p className="text-lg font-bold">{name}</p>
-        {current ? (
-          <span className="rounded-md bg-accent/15 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-accent">
-            Current
-          </span>
-        ) : null}
-      </div>
-      <ul className="mt-4 space-y-2 text-sm text-muted">
-        {points.map((point) => (
-          <li key={point}>{point}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between border-b border-line py-3 last:border-0">
-      <span className="text-muted">{label}</span>
-      <span>{value}</span>
-    </div>
-  );
-}

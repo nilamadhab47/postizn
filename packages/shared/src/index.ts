@@ -23,7 +23,7 @@ export function platformCharCount(platform: keyof typeof PLATFORM_CHAR_LIMITS, t
 
 export const DEFAULT_TIMEZONE = "Asia/Kolkata";
 
-export type Plan = "FREE" | "PRO";
+export type Plan = "FREE" | "PRO" | "STUDIO";
 
 export type Platform =
   | "TWITTER"
@@ -170,3 +170,42 @@ export function mediaBundleError(
   }
   return null;
 }
+
+export const PAID_PLANS = ["PRO", "STUDIO"] as const;
+export type PaidPlanId = (typeof PAID_PLANS)[number];
+
+export const BILLING_INTERVALS = ["monthly", "yearly"] as const;
+export type BillingInterval = (typeof BILLING_INTERVALS)[number];
+
+export const BILLING_CURRENCY = "INR";
+
+export const BILLING_PROVIDERS = ["none", "razorpay", "stripe"] as const;
+export type BillingProviderId = (typeof BILLING_PROVIDERS)[number];
+
+/** Amounts in paise (INR × 100). Adapters pass this through unchanged. */
+export const PAID_SKUS: Record<
+  PaidPlanId,
+  Record<BillingInterval, { amountPaise: number; listPaise: number }>
+> = {
+  PRO: {
+    monthly: { amountPaise: 79900, listPaise: 99900 },
+    yearly: { amountPaise: 799900, listPaise: 999900 },
+  },
+  STUDIO: {
+    monthly: { amountPaise: 149900, listPaise: 149900 },
+    yearly: { amountPaise: 1499900, listPaise: 1499900 },
+  },
+};
+
+export function isPaidPlan(value: string): value is PaidPlanId {
+  return (PAID_PLANS as readonly string[]).includes(value);
+}
+
+export function isBillingInterval(value: string): value is BillingInterval {
+  return (BILLING_INTERVALS as readonly string[]).includes(value);
+}
+
+export function rupeesFromPaise(paise: number) {
+  return paise / 100;
+}
+

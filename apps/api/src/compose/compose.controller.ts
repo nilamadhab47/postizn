@@ -9,9 +9,8 @@ export class ComposeController {
   constructor(private readonly compose: ComposeService) {}
 
   @Get("ai")
-  async status(@CurrentUser() user: JwtUser) {
-    const plan = await this.compose.planOf(user.userId);
-    return this.compose.imageStatus(user.userId, plan);
+  status(@CurrentUser() user: JwtUser) {
+    return this.compose.imageStatus(user.userId);
   }
 
   @Post("variations")
@@ -31,11 +30,10 @@ export class ComposeController {
   }
 
   @Post("image")
-  async image(
+  image(
     @CurrentUser() user: JwtUser,
     @Body() body: { prompt?: string },
   ) {
-    const plan = await this.compose.planOf(user.userId);
-    return this.compose.generateImage(user.userId, body.prompt ?? "", plan);
+    return this.compose.generateImage(user.userId, body.prompt ?? "");
   }
 }

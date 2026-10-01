@@ -1,3 +1,12 @@
+import {
+  PRO_LAUNCH_MONTHLY_INR,
+  PRO_LIST_MONTHLY_INR,
+  PRO_YEARLY_INR,
+  STUDIO_MONTHLY_INR,
+  TRIAL_DAYS,
+  inr,
+} from "./pricing";
+
 export const FAQS: { q: string; a: string }[] = [
   {
     q: "Which platforms can I publish to?",
@@ -5,7 +14,7 @@ export const FAQS: { q: string; a: string }[] = [
   },
   {
     q: "Is it really free to start?",
-    a: "Yes. Join the waitlist now — when we open, you can start scheduling without a card or a trial countdown. Paid plans arrive later for teams and higher volume.",
+    a: `Yes for ${TRIAL_DAYS} days, no card — LinkedIn and X only. After that you add a card for Pro at ${inr(PRO_LAUNCH_MONTHLY_INR)}/month launch (${inr(PRO_LIST_MONTHLY_INR)} list) or ${inr(PRO_YEARLY_INR)}/year. Studio is ${inr(STUDIO_MONTHLY_INR)}/month when you need more generation and AI video. There is no forever Free plan. GST extra later. Checkout is next.`,
   },
   {
     q: "What about timezones?",

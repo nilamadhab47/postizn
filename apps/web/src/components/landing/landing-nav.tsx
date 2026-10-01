@@ -8,6 +8,7 @@ const LINKS = [
   { label: "Demo", href: "#demo" },
   { label: "Features", href: "#features" },
   { label: "How it works", href: "#how" },
+  { label: "Pricing", href: "#pricing" },
   { label: "FAQ", href: "#faq" },
 ];
 
@@ -52,7 +53,7 @@ export function LandingNav({ waitlistMode }: { waitlistMode: boolean }) {
           </span>
         </a>
 
-        <div className="hidden items-center gap-1 md:flex">
+        <div className="hidden items-center gap-0.5 lg:flex">
           {LINKS.map((link) => (
             <a
               key={link.href}
@@ -88,7 +89,7 @@ export function LandingNav({ waitlistMode }: { waitlistMode: boolean }) {
                 href="/register"
                 className="rounded-full bg-accent px-5 py-2 text-sm font-bold text-accent-fg"
               >
-                Start free
+                Start 14-day trial
               </motion.a>
             </>
           )}

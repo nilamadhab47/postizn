@@ -10,6 +10,7 @@ datasource db {
 enum Plan {
   FREE
   PRO
+  STUDIO
 }
 
 enum Platform {
@@ -38,11 +39,22 @@ model User {
   image          String?
   passwordHash   String?
   googleId       String?  @unique
+  linkedinId     String?  @unique
+  twitterId      String?  @unique
   emailVerified  DateTime?
-  plan           Plan     @default(FREE)
-  timezone       String   @default("Asia/Kolkata")
-  postsThisMonth Int      @default(0)
-  postsResetAt   DateTime?
+  plan              Plan      @default(FREE)
+  billingExempt     Boolean   @default(false)
+  timezone          String    @default("Asia/Kolkata")
+  trialStartedAt    DateTime?
+  trialEndsAt       DateTime?
+  trialUsed         Boolean   @default(false)
+  trialClosedAt     DateTime?
+  postsThisMonth    Int       @default(0)
+  postsResetAt      DateTime?
+  postsToday        Int       @default(0)
+  postsTodayResetAt DateTime?
+  imageGensUsed     Int       @default(0)
+  aiCallsUsed       Int       @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -50,6 +62,8 @@ model User {
   posts          Post[]
   media          Media[]
   notifications  Notification[]
+  subscription   Subscription?
+  checkouts      BillingCheckout[]
 }
 
 model SocialAccount {
@@ -65,6 +79,7 @@ model SocialAccount {
   tokenExpiry  DateTime?
   isActive     Boolean   @default(true)
   isMock       Boolean   @default(false)
+  pausedByPlan Boolean   @default(false)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -154,6 +169,80 @@ model Notification {
 enum NotificationKind {
   PUBLISHED
   FAILED
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum BillingProvider {
+  NONE
+  RAZORPAY
+  STRIPE
+}
+
+enum SubscriptionStatus {
+  INCOMPLETE
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+enum CheckoutStatus {
+  OPEN
+  COMPLETED
+  EXPIRED
+}
+
+model Subscription {
+  id                     String             @id @default(cuid())
+  userId                 String             @unique
+  plan                   Plan
+  interval               BillingInterval
+  status                 SubscriptionStatus
+  provider               BillingProvider
+  providerCustomerId     String?
+  providerSubscriptionId String?
+  currentPeriodEnd       DateTime?
+  cancelAtPeriodEnd      Boolean            @default(false)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model BillingCheckout {
+  id          String          @id @default(cuid())
+  userId      String
+  plan        Plan
+  interval    BillingInterval
+  provider    BillingProvider
+  providerRef String?
+  status      CheckoutStatus  @default(OPEN)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([providerRef])
+}
+
+model BillingEvent {
+  id              String          @id @default(cuid())
+  provider        BillingProvider
+  providerEventId String
+  type            String
+  userId          String?
+  checkoutId      String?
+  payload         Json
+  processedAt     DateTime?
+  createdAt       DateTime        @default(now())
+
+  @@unique([provider, providerEventId])
+  @@index([userId])
 }
 
 model Waitlist {

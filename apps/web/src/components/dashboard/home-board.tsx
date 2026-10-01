@@ -7,7 +7,9 @@ import { ApiError } from "@/lib/api";
 import {
   fetchQueuePosts,
   formatCount,
+  retryPost,
   stamp,
+  toCalPost,
   whenLabel,
   type CalPost,
 } from "@/lib/calendar-posts";
@@ -18,9 +20,11 @@ import {
   PostModal,
 } from "@/components/calendar/post-preview";
 import { mediaKind } from "@postn/shared";
+import { toast } from "sonner";
+import { SetupHome } from "@/components/dashboard/setup-home";
 
 export function HomeBoard() {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const now = useMemo(() => istWallClock(), []);
   const today = startOfDay(now);
   const [posts, setPosts] = useState<CalPost[]>([]);
@@ -30,15 +34,36 @@ export function HomeBoard() {
     post: CalPost;
     queue: CalPost[];
   } | null>(null);
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
+    void refresh();
     void fetchQueuePosts()
       .then(setPosts)
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : "Could not load posts"),
       )
       .finally(() => setLoading(false));
-  }, []);
+  }, [refresh]);
+
+  async function retryFailed(post: CalPost) {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      const saved = await retryPost(post.id);
+      const next = toCalPost(saved);
+      setPosts((rows) => rows.map((row) => (row.id === next.id ? next : row)));
+      toast.success(
+        next.status === "failed"
+          ? "Still failed on a channel"
+          : "Sent to the failed channel",
+      );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not retry");
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   const data = useMemo(() => buildHome(posts, today), [posts, today]);
   const first = user?.name?.split(" ")[0] ?? "there";
@@ -49,6 +74,14 @@ export function HomeBoard() {
   const inPeak = nextHour >= 19 && nextHour <= 22;
   const mixTotal = data.mix.reduce((sum, row) => sum + row.count, 0) || 1;
   const failed = data.failed[0];
+  const setup = user?.setup;
+  const channels = setup?.channels ?? 0;
+  const postCount = setup?.posts ?? posts.length;
+  const needsSetup =
+    setup != null && (setup.channels === 0 || setup.posts === 0);
+  const headerHref = channels === 0 ? "/accounts?from=start" : "/compose";
+  const headerLabel =
+    channels === 0 ? "Connect a channel" : postCount === 0 ? "Write first post" : "New post";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -79,10 +112,10 @@ export function HomeBoard() {
             Calendar
           </Link>
           <Link
-            href="/compose"
+            href={headerHref}
             className="rounded-xl bg-accent px-4 py-2 text-sm font-bold text-accent-fg"
           >
-            New post
+            {headerLabel}
           </Link>
         </div>
       </header>
@@ -93,17 +126,23 @@ export function HomeBoard() {
             {error}
           </p>
         ) : null}
-        {loading ? (
+        {needsSetup ? (
+          <SetupHome name={first} hasChannel={channels > 0} />
+        ) : loading ? (
           <p className="mb-5 text-sm font-semibold text-muted">Loading your queue…</p>
         ) : null}
 
-        {failed ? (
+        {!needsSetup && failed ? (
           <FailedBanner
             post={failed}
+            busy={retrying}
             onOpen={() => setActive({ post: failed, queue: data.failed })}
+            onRetry={() => void retryFailed(failed)}
           />
         ) : null}
 
+        {!needsSetup ? (
+          <>
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.8fr)]">
           <section className="dash-glow relative overflow-hidden rounded-3xl border border-line p-5">
             <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-accent">
@@ -249,6 +288,8 @@ export function HomeBoard() {
             </div>
           )}
         </section>
+          </>
+        ) : null}
       </div>
 
       {active ? (
@@ -257,6 +298,27 @@ export function HomeBoard() {
           queue={active.queue}
           onClose={() => setActive(null)}
           onSelect={(post) => setActive({ post, queue: active.queue })}
+          onMutated={(next) => {
+            const id = active.post.id;
+            if (!next) {
+              setPosts((rows) => rows.filter((row) => row.id !== id));
+              setActive(null);
+              return;
+            }
+            setPosts((rows) =>
+              rows.map((row) => (row.id === next.id ? next : row)),
+            );
+            setActive((cur) =>
+              cur
+                ? {
+                    post: next,
+                    queue: cur.queue.map((row) =>
+                      row.id === next.id ? next : row,
+                    ),
+                  }
+                : cur,
+            );
+          }}
         />
       ) : null}
     </div>
@@ -306,27 +368,34 @@ function buildHome(posts: CalPost[], today: Date) {
 
 function FailedBanner({
   post,
+  busy,
   onOpen,
+  onRetry,
 }: {
   post: CalPost;
+  busy: boolean;
   onOpen: () => void;
+  onRetry: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="mb-5 flex w-full items-center justify-between gap-3 rounded-2xl border border-today/40 bg-today/10 px-4 py-3 text-left"
-    >
-      <span>
+    <div className="mb-5 flex w-full items-center justify-between gap-3 rounded-2xl border border-today/40 bg-today/10 px-4 py-3">
+      <button type="button" onClick={onOpen} className="min-w-0 text-left">
         <span className="text-[11px] font-extrabold uppercase tracking-wide text-today">
           Needs you
         </span>
-        <span className="mt-0.5 block text-sm font-semibold">{post.title}</span>
-      </span>
-      <span className="shrink-0 rounded-lg bg-today px-3 py-1.5 text-xs font-bold text-white">
-        Retry
-      </span>
-    </button>
+        <span className="mt-0.5 block truncate text-sm font-semibold">
+          {post.title}
+        </span>
+      </button>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={onRetry}
+        className="shrink-0 rounded-lg bg-today px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40"
+      >
+        {busy ? "Retrying…" : "Retry"}
+      </button>
+    </div>
   );
 }
 

@@ -7,6 +7,7 @@ import { ChannelIcon, HelpIcon } from "@/components/accounts/channel-icons";
 import { AppHeader } from "@/components/layout/app-header";
 import { API_URL, api, ApiError } from "@/lib/api";
 import { CHANNEL_GUIDES } from "@/lib/channel-guides";
+import { useAuth } from "@/lib/auth";
 
 type ChannelAccount = {
   id: string;
@@ -17,6 +18,7 @@ type ChannelAccount = {
   avatar: string | null;
   isActive: boolean;
   isMock: boolean;
+  pausedByPlan?: boolean;
 };
 
 type TokenField = {
@@ -41,7 +43,7 @@ type ProviderRow = {
 };
 
 type Catalog = {
-  plan: "FREE" | "PRO";
+  plan: "FREE" | "TRIAL" | "PRO" | "STUDIO";
   limit: number;
   used: number;
   providers: ProviderRow[];
@@ -61,6 +63,9 @@ const STATUS_COPY: Record<string, string> = {
 
 export function ChannelsBoard() {
   const search = useSearchParams();
+  const { user, refresh } = useAuth();
+  const fromStart = search.get("from") === "start";
+  const oauthStatus = search.get("status");
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -69,6 +74,7 @@ export function ChannelsBoard() {
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [helpSlug, setHelpSlug] = useState<string | null>(null);
+  const [tokenConnected, setTokenConnected] = useState(false);
 
   const banner = useMemo(() => {
     const status = search.get("status");
@@ -91,6 +97,12 @@ export function ChannelsBoard() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (oauthStatus === "connected" || oauthStatus === "demo") {
+      void refresh();
+    }
+  }, [oauthStatus, refresh]);
 
   async function disconnect(id: string) {
     setBusyId(id);
@@ -130,7 +142,9 @@ export function ChannelsBoard() {
       });
       setForm(null);
       setFields({});
+      setTokenConnected(true);
       await load();
+      await refresh();
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : "Could not connect");
     } finally {
@@ -139,6 +153,15 @@ export function ChannelsBoard() {
   }
 
   const atCap = Boolean(catalog && catalog.used >= catalog.limit);
+  const hasChannel = (catalog?.used ?? user?.setup?.channels ?? 0) > 0;
+  const noPostsYet = (user?.setup?.posts ?? 0) === 0;
+  const showFirstPost =
+    hasChannel &&
+    noPostsYet &&
+    (fromStart ||
+      tokenConnected ||
+      oauthStatus === "connected" ||
+      oauthStatus === "demo");
   const groups = [
     {
       title: "Free",
@@ -162,15 +185,45 @@ export function ChannelsBoard() {
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <AppHeader title="Channels" />
       <div className="p-8">
+        {fromStart && !hasChannel ? (
+          <div className="mb-6 max-w-2xl rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
+            <p className="text-[11px] font-extrabold uppercase tracking-wide text-accent">
+              Step 1 of 2
+            </p>
+            <p className="mt-1 text-sm font-semibold">
+              Connect LinkedIn or X. Then we send you to Compose for the first
+              post.
+            </p>
+          </div>
+        ) : null}
+        {showFirstPost ? (
+          <div className="mb-6 flex max-w-2xl flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
+            <div>
+              <p className="text-[11px] font-extrabold uppercase tracking-wide text-accent">
+                Step 2 of 2
+              </p>
+              <p className="mt-1 text-sm font-semibold">
+                Channel is on. Write the first post — one draft, every feed.
+              </p>
+            </div>
+            <Link
+              href="/compose"
+              className="shrink-0 rounded-xl bg-accent px-3 py-2 text-sm font-bold text-accent-fg"
+            >
+              Open compose
+            </Link>
+          </div>
+        ) : null}
         <p className="max-w-2xl text-sm text-muted">
-          LinkedIn and X are free. LinkedIn Page, Telegram, Slack, Discord, and
-          Dev.to are live on PRO. Medium no longer issues API tokens, so it
+          LinkedIn and X are on trial. LinkedIn Page, Telegram, Slack, Discord, and
+          Dev.to unlock on Pro. Medium no longer issues API tokens, so it
           stays in Unavailable. The rest of the grid is the roadmap.
         </p>
         {catalog ? (
           <p className="mt-3 text-xs uppercase tracking-wide text-muted">
-            {catalog.plan} · {catalog.used} / {catalog.limit} connected
-            {catalog.plan === "FREE" ? " · extra channels need PRO" : ""}
+            {catalog.plan} · {catalog.used} / {catalog.limit} sending
+            {catalog.plan === "FREE" ? " · extra channels stay connected, paused until Pro" : ""}
+            {catalog.plan === "TRIAL" ? " · trial · LinkedIn and X" : ""}
           </p>
         ) : null}
         {banner ? (
@@ -203,6 +256,11 @@ export function ChannelsBoard() {
                               PRO
                             </span>
                           ) : null}
+                          {provider.account?.pausedByPlan ? (
+                            <span className="rounded-md border border-line px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-muted">
+                              Paused
+                            </span>
+                          ) : null}
                           <button
                             type="button"
                             onClick={() => setHelpSlug(provider.slug)}
@@ -220,6 +278,9 @@ export function ChannelsBoard() {
                               ? ` · @${provider.account.username}`
                               : ""}
                             {provider.account.isMock ? " · demo" : ""}
+                            {provider.account.pausedByPlan
+                              ? " · paused until Pro"
+                              : ""}
                           </p>
                         ) : (
                           <p className="mt-1 text-sm text-muted">{provider.blurb}</p>
@@ -385,7 +446,7 @@ function ChannelActions({
             Reconnect
           </button>
         )}
-        {!provider.account.isMock ? (
+        {!provider.account.isMock && !provider.account.pausedByPlan ? (
           <button
             type="button"
             disabled={busyId === `test:${provider.account.id}`}

@@ -1,8 +1,24 @@
 import Link from "next/link";
 import { AuthForm } from "@/components/auth/auth-form";
+import { OauthButtons } from "@/components/auth/oauth-buttons";
 
-export function AuthCard({ mode }: { mode: "login" | "register" }) {
+const OAUTH_ERRORS: Record<string, string> = {
+  oauth_denied: "You cancelled sign in.",
+  oauth_expired: "Sign in expired. Try again.",
+  oauth_failed: "Could not sign in with Google, LinkedIn, or X. Try again.",
+  oauth_not_configured: "That sign-in method is not set up on this server.",
+  oauth_missing: "Sign in did not complete. Try again.",
+};
+
+export function AuthCard({
+  mode,
+  oauthError,
+}: {
+  mode: "login" | "register";
+  oauthError?: string;
+}) {
   const isRegister = mode === "register";
+  const oauthMessage = oauthError ? OAUTH_ERRORS[oauthError] ?? OAUTH_ERRORS.oauth_failed : null;
 
   return (
     <div className="flex min-h-screen items-center justify-center px-6">
@@ -36,9 +52,11 @@ export function AuthCard({ mode }: { mode: "login" | "register" }) {
         </h1>
         <p className="mt-2 text-sm text-muted">
           {isRegister
-            ? "Sign up with your name, email, and password."
-            : "Sign in with your email and password."}
+            ? "Sign up with Google, LinkedIn, X, or email. 14-day trial, no card."
+            : "Sign in with Google, LinkedIn, X, or email."}
         </p>
+        {oauthMessage ? <p className="mt-4 text-sm text-red-400">{oauthMessage}</p> : null}
+        <OauthButtons mode={mode} />
         <AuthForm mode={mode} />
       </div>
     </div>

@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, type Me } from "@/lib/api";
 import { ChannelIcon } from "@/components/accounts/channel-icons";
 import {
   PLATFORM_LIMITS,
@@ -27,6 +28,7 @@ import {
 } from "@/lib/compose-media";
 import { mediaBundleError, mediaKind } from "@postn/shared";
 import { IstDateTimePicker } from "@/components/compose/ist-datetime-picker";
+import { MediaLibraryDialog } from "@/components/compose/media-library-picker";
 import {
   Dialog,
   DialogContent,
@@ -44,7 +46,28 @@ type ChannelAccount = {
   username: string | null;
   displayName: string | null;
   avatar: string | null;
+  pausedByPlan?: boolean;
 };
+
+function liveAccount(row: { account: ChannelAccount | null }) {
+  return row.account && !row.account.pausedByPlan ? row.account : null;
+}
+
+function quotaLine(user: Me | null, imageLeft: number | null, aiLeft: number | null) {
+  const e = user?.entitlements;
+  const access = e?.access ?? user?.plan ?? "FREE";
+  const days =
+    access === "TRIAL" && e?.trialDaysRemaining != null
+      ? ` · ${e.trialDaysRemaining}d trial`
+      : "";
+  const postsToday = e?.postsTodayRemaining;
+  const postsMonth = e?.postsRemaining;
+  const posts =
+    postsToday != null && postsMonth != null
+      ? `${postsToday} posts today · ${postsMonth} this month`
+      : "Post quotas apply";
+  return `${access}${days} · ${posts} · ${imageLeft ?? e?.imageRemaining ?? 0} images · ${aiLeft ?? e?.aiRemaining ?? 0} AI`;
+}
 
 type ProviderRow = {
   slug: string;
@@ -90,7 +113,7 @@ export function ComposeBoard({
   initialAt?: string;
   initialPostId?: string;
 }) {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const router = useRouter();
   const area = useRef<HTMLTextAreaElement>(null);
   const pending = useRef(false);
@@ -107,16 +130,29 @@ export function ComposeBoard({
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmNow, setConfirmNow] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [loadedStatus, setLoadedStatus] = useState<string | null>(null);
+  const [pinnedPlatforms, setPinnedPlatforms] = useState<Record<string, boolean>>(
+    {},
+  );
   const [imagePrompt, setImagePrompt] = useState("");
   const [imageError, setImageError] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(
     null,
   );
-  const [imageLeft, setImageLeft] = useState<number | null>(3);
+  const [imageLeft, setImageLeft] = useState<number | null>(
+    user?.entitlements?.imageRemaining ?? 3,
+  );
+  const [aiLeft, setAiLeft] = useState<number | null>(
+    user?.entitlements?.aiRemaining ?? 8,
+  );
   const [fileOver, setFileOver] = useState(false);
   const fileDragDepth = useRef(0);
 
   const name = user?.name || "Demo";
+  const imageCapped = (imageLeft ?? 0) <= 0;
+  const aiCapped = (aiLeft ?? 0) <= 0;
   const selectedRows = live.filter((row) => selected[row.platform]);
   const activeValue = tab === "all" ? globalDraft : (overrides[tab] ?? globalDraft);
 
@@ -161,15 +197,18 @@ export function ComposeBoard({
         setLive(liveRows);
         setSoon(soonRows);
         const next: Record<string, boolean> = {};
-        for (const row of liveRows) next[row.platform] = Boolean(row.account);
+        for (const row of liveRows) next[row.platform] = Boolean(liveAccount(row));
         if (!Object.values(next).some(Boolean)) {
           for (const row of liveRows) next[row.platform] = row.plan === "FREE";
         }
         if (!initialPostId) setSelected(next);
       })
       .catch(() => undefined);
-    void api<{ remaining: number | null }>("/compose/ai")
-      .then((data) => setImageLeft(data.remaining))
+    void api<{ remaining: number | null; aiRemaining?: number | null }>("/compose/ai")
+      .then((data) => {
+        setImageLeft(data.remaining);
+        if (data.aiRemaining != null) setAiLeft(data.aiRemaining);
+      })
       .catch(() => undefined);
   }, []);
 
@@ -186,11 +225,31 @@ export function ComposeBoard({
         );
         if (post.scheduledAt) setWhen(toLocalInput(post.scheduledAt));
         const next: Record<string, boolean> = {};
-        for (const target of post.targets) next[target.platform] = true;
+        const pinned: Record<string, boolean> = {};
+        for (const target of post.targets) {
+          next[target.platform] = true;
+          if (target.platformPostId || target.status === "PUBLISHED") {
+            pinned[target.platform] = true;
+          }
+        }
         if (Object.keys(next).length) setSelected(next);
+        setLoadedStatus(post.status);
+        if (canPatchLoaded(post)) {
+          setEditingId(post.id);
+          setPinnedPlatforms(pinned);
+        } else {
+          setEditingId(null);
+          setPinnedPlatforms({});
+        }
+        if (post.status === "PUBLISHING") {
+          setBanner({
+            kind: "err",
+            text: "That post is sending. Wait a moment, then try again.",
+          });
+        }
       })
       .catch(() =>
-        setBanner({ kind: "err", text: "Could not open that draft." }),
+        setBanner({ kind: "err", text: "Could not open that post." }),
       );
   }, [initialPostId]);
 
@@ -218,10 +277,21 @@ export function ComposeBoard({
   }
 
   async function runVariations() {
+    if (aiCapped) {
+      setBanner({
+        kind: "err",
+        text: "AI write cap reached for this plan.",
+      });
+      return;
+    }
     setBusy("write");
     setBanner(null);
     try {
-      const data = await api<{ items: string[]; source: string }>(
+      const data = await api<{
+        items: string[];
+        source: string;
+        remaining?: number | null;
+      }>(
         "/compose/variations",
         {
           method: "POST",
@@ -230,6 +300,8 @@ export function ComposeBoard({
       );
       setVariations(data.items);
       setAiSource(data.source);
+      if (data.remaining != null) setAiLeft(data.remaining);
+      void refresh();
     } catch (err) {
       setBanner({
         kind: "err",
@@ -244,12 +316,17 @@ export function ComposeBoard({
     setBusy(kind);
     setBanner(null);
     try {
-      const data = await api<{ text: string }>("/compose/suggest", {
-        method: "POST",
-        body: JSON.stringify({ draft: activeValue, kind }),
-      });
+      const data = await api<{ text: string; remaining?: number | null }>(
+        "/compose/suggest",
+        {
+          method: "POST",
+          body: JSON.stringify({ draft: activeValue, kind }),
+        },
+      );
       if (kind === "hashtags") setActive(`${activeValue.trim()}\n\n${data.text}`);
       else setActive(data.text);
+      if (data.remaining != null) setAiLeft(data.remaining);
+      void refresh();
     } catch (err) {
       setBanner({
         kind: "err",
@@ -262,10 +339,10 @@ export function ComposeBoard({
 
   function requestImage() {
     if (pending.current || busy) return;
-    if (imageLeft === 0 && user?.plan !== "PRO") {
+    if (imageCapped) {
       setBanner({
         kind: "err",
-        text: "Test image cap reached. PRO unlocks more generations.",
+        text: "Image cap reached for this plan.",
       });
       return;
     }
@@ -280,8 +357,8 @@ export function ComposeBoard({
       setImageError("Describe the image you want.");
       return;
     }
-    if (imageLeft === 0 && user?.plan !== "PRO") {
-      setImageError("Test image cap reached. PRO unlocks more generations.");
+    if (imageCapped) {
+      setImageError("Image cap reached for this plan.");
       return;
     }
     setBusy("image");
@@ -296,6 +373,7 @@ export function ComposeBoard({
         },
       );
       setImageLeft(data.remaining);
+      void refresh();
       const stored = await api<{ url: string; mimeType?: string }>("/media/data", {
         method: "POST",
         body: JSON.stringify({ dataUrl: data.dataUrl, fileName: "generated.png" }),
@@ -404,6 +482,7 @@ export function ComposeBoard({
   }
 
   function toggle(platform: string) {
+    if (pinnedPlatforms[platform]) return;
     setSelected((prev) => {
       const next = { ...prev, [platform]: !prev[platform] };
       if (tab === platform && next[platform] === false) setTab("all");
@@ -413,7 +492,17 @@ export function ComposeBoard({
 
   async function submit(action: "draft" | "schedule" | "now") {
     if (pending.current || busy) return;
-    const rows = selectedRows.filter((row) => row.account);
+    const rows = selectedRows.filter((row) => liveAccount(row));
+    const pausedRows = selectedRows.filter((row) => row.account?.pausedByPlan);
+    if (pausedRows.length && !rows.length) {
+      setBanner({
+        kind: "err",
+        text: `${pausedRows.map((row) => row.label).join(", ")} ${
+          pausedRows.length === 1 ? "is" : "are"
+        } paused until Pro. Upgrade to send.`,
+      });
+      return;
+    }
     if (!rows.length) {
       setBanner({ kind: "err", text: "Connect and select a channel first." });
       return;
@@ -434,21 +523,35 @@ export function ComposeBoard({
       }
     }
 
+    if (loadedStatus === "PUBLISHING") {
+      setBanner({
+        kind: "err",
+        text: "That post is sending. Wait a moment, then try again.",
+      });
+      return;
+    }
+
     pending.current = true;
     setBusy(action);
     setBanner(null);
     try {
-      const post = await api<SavedPost>("/posts", {
-        method: "POST",
-        body: JSON.stringify({
-          action,
-          content: globalDraft,
-          contentByPlatform,
-          platforms: rows.map((row) => row.platform),
-          scheduledAt: when ? new Date(when).toISOString() : null,
-          mediaUrls: media.filter((item) => item.url.startsWith("http")).map((item) => item.url),
-        }),
-      });
+      const editing = Boolean(editingId);
+      const post = await api<SavedPost>(
+        editing ? `/posts/${editingId}` : "/posts",
+        {
+          method: editing ? "PATCH" : "POST",
+          body: JSON.stringify({
+            action,
+            content: globalDraft,
+            contentByPlatform,
+            platforms: rows.map((row) => row.platform),
+            scheduledAt: when ? new Date(when).toISOString() : null,
+            mediaUrls: media
+              .filter((item) => item.url.startsWith("http"))
+              .map((item) => item.url),
+          }),
+        },
+      );
       const nextStatus =
         action === "draft" ? "DRAFT" : action === "schedule" ? "SCHEDULED" : post.status;
       router.push(`/posts?status=${nextStatus}`);
@@ -464,7 +567,17 @@ export function ComposeBoard({
 
   function requestPostNow() {
     if (pending.current || busy) return;
-    const rows = selectedRows.filter((row) => row.account);
+    const rows = selectedRows.filter((row) => liveAccount(row));
+    const pausedRows = selectedRows.filter((row) => row.account?.pausedByPlan);
+    if (pausedRows.length && !rows.length) {
+      setBanner({
+        kind: "err",
+        text: `${pausedRows.map((row) => row.label).join(", ")} ${
+          pausedRows.length === 1 ? "is" : "are"
+        } paused until Pro. Upgrade to send.`,
+      });
+      return;
+    }
     if (!rows.length) {
       setBanner({ kind: "err", text: "Connect and select a channel first." });
       return;
@@ -485,22 +598,42 @@ export function ComposeBoard({
       })
     : "Now";
 
-  const noneConnected = selectedRows.every((row) => !row.account);
+  const noneConnected = selectedRows.every((row) => !liveAccount(row));
   const noneSelected = selectedRows.length === 0 || noneConnected;
+  const noAccounts = live.length > 0 && live.every((row) => !liveAccount(row));
   const locked = Boolean(busy);
   const sending = busy === "draft" || busy === "schedule" || busy === "now";
   const sendChannels = selectedRows
-    .filter((row) => row.account)
+    .filter((row) => liveAccount(row))
     .map((row) => row.label)
     .join(", ");
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-line px-5">
+      <header className="flex min-h-16 shrink-0 items-center justify-between gap-4 border-b border-line px-5 py-2">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight">Compose</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">
+            {editingId
+              ? loadedStatus === "FAILED"
+                ? "Fix post"
+                : "Edit post"
+              : initialPostId
+                ? "Duplicate"
+                : "Compose"}
+          </h1>
           <p className="text-xs font-bold uppercase tracking-wider text-muted">
-            Write once · see every feed
+            {editingId
+              ? loadedStatus === "SCHEDULED"
+                ? "Updates the queued post · not a copy"
+                : loadedStatus === "FAILED"
+                  ? "Saves this post, then send again"
+                  : "Saves this draft · not a copy"
+              : initialPostId
+                ? "Creates a new post from this one"
+                : "Write once · see every feed"}
+          </p>
+          <p className="mt-1 text-[11px] font-semibold normal-case tracking-normal text-muted">
+            {quotaLine(user, imageLeft, aiLeft)}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -531,18 +664,42 @@ export function ComposeBoard({
               </p>
             </div>
           ) : null}
+          {noAccounts ? (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
+              <div>
+                <p className="text-[11px] font-extrabold uppercase tracking-wide text-accent">
+                  Connect a channel first
+                </p>
+                <p className="mt-0.5 text-sm font-semibold">
+                  Compose can preview, but it cannot send until LinkedIn or X
+                  is connected.
+                </p>
+              </div>
+              <Link
+                href="/accounts?from=start"
+                className="shrink-0 rounded-xl bg-accent px-3 py-2 text-sm font-bold text-accent-fg"
+              >
+                Connect a channel
+              </Link>
+            </div>
+          ) : null}
           <div className="mb-4 flex flex-wrap gap-2">
-            {live.map((row) => (
+            {live.map((row) => {
+              const account = liveAccount(row);
+              return (
               <ChannelChip
                 key={row.platform}
                 slug={row.slug}
                 label={row.label}
                 on={Boolean(selected[row.platform])}
-                handle={row.account?.username}
-                locked={!row.account}
+                handle={account?.username}
+                locked={!account}
+                paused={Boolean(row.account?.pausedByPlan)}
+                pinned={Boolean(pinnedPlatforms[row.platform])}
                 onToggle={() => toggle(row.platform)}
               />
-            ))}
+              );
+            })}
           </div>
           {soon.length ? (
             <p className="mb-3 text-[11px] font-semibold text-muted">
@@ -598,13 +755,21 @@ export function ComposeBoard({
               </label>
               <button
                 type="button"
+                onClick={() => setLibraryOpen(true)}
+                disabled={Boolean(busy)}
+                className="rounded-lg px-2 py-1 text-sm font-semibold hover:bg-background disabled:opacity-40"
+              >
+                From library
+              </button>
+              <button
+                type="button"
                 onClick={requestImage}
                 disabled={Boolean(busy)}
                 className="rounded-lg px-2 py-1 text-sm font-semibold hover:bg-background disabled:opacity-40"
               >
                 Generate image
                 <span className="ml-1 text-[10px] font-extrabold uppercase text-accent">
-                  {user?.plan === "PRO" ? "PRO" : `${imageLeft ?? 0} test`}
+                  {`${imageLeft ?? 0} left`}
                 </span>
               </button>
               {hasMedia ? (
@@ -712,7 +877,7 @@ export function ComposeBoard({
               onClick={() => void runVariations()}
               className="rounded-xl bg-accent px-3 py-2 text-sm font-bold text-accent-fg"
             >
-              {busy === "write" ? "Writing…" : "Write with Claude"}
+              {busy === "write" ? "Writing…" : `Write with AI · ${aiLeft ?? 0} left`}
             </button>
             {selected.TWITTER ? (
               <button
@@ -760,7 +925,12 @@ export function ComposeBoard({
           {variations.length ? (
             <div className="mt-4 space-y-2">
               <p className="text-[11px] font-extrabold uppercase tracking-wide text-muted">
-                {aiSource === "claude" ? "Claude" : "Sample"} · tap to use
+                {aiSource === "haiku"
+                  ? "AI"
+                  : aiSource === "claude"
+                    ? "Claude"
+                    : "Sample"}{" "}
+                · tap to use
               </p>
               {variations.map((item) => (
                 <button
@@ -785,7 +955,7 @@ export function ComposeBoard({
                 className="inline-flex items-center gap-2 rounded-xl border border-line px-4 py-2.5 text-sm font-semibold disabled:cursor-wait disabled:opacity-40"
               >
                 {busy === "draft" ? <Spinner /> : null}
-                {busy === "draft" ? "Saving draft…" : "Save draft"}
+                {busy === "draft" ? "Saving…" : "Save draft"}
               </button>
               <button
                 type="button"
@@ -795,7 +965,13 @@ export function ComposeBoard({
                 className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-accent-fg disabled:cursor-wait disabled:opacity-40"
               >
                 {busy === "schedule" ? <Spinner /> : null}
-                {busy === "schedule" ? "Scheduling…" : "Schedule"}
+                {busy === "schedule"
+                  ? editingId
+                    ? "Updating queue…"
+                    : "Scheduling…"
+                  : editingId && loadedStatus === "SCHEDULED"
+                    ? "Update schedule"
+                    : "Schedule"}
               </button>
               <button
                 type="button"
@@ -827,6 +1003,7 @@ export function ComposeBoard({
           {selectedRows.length ? (
             selectedRows.map((row) => {
               const account = row.account;
+              const canSend = Boolean(liveAccount(row));
               const body = overrides[row.platform] ?? globalDraft;
               return (
                 <button
@@ -841,7 +1018,11 @@ export function ComposeBoard({
                     }`}
                   >
                     {row.label}
-                    {!account ? " · preview only" : ""}
+                    {account?.pausedByPlan
+                      ? " · paused until Pro"
+                      : !canSend
+                        ? " · preview only"
+                        : ""}
                   </p>
                   <ChannelPreview
                     platform={row.platform}
@@ -868,6 +1049,16 @@ export function ComposeBoard({
         </aside>
       </div>
 
+      <MediaLibraryDialog
+        open={libraryOpen}
+        onOpenChange={setLibraryOpen}
+        current={media}
+        onChange={(next, note) => {
+          setMedia(next);
+          if (note) setBanner({ kind: "ok", text: note });
+        }}
+      />
+
       <Dialog
         open={confirmNow}
         onOpenChange={(open) => {
@@ -884,7 +1075,7 @@ export function ComposeBoard({
           </DialogHeader>
           <div className="flex flex-wrap gap-1.5">
             {selectedRows
-              .filter((row) => row.account)
+              .filter((row) => liveAccount(row))
               .map((row) => (
                 <span
                   key={row.platform}
@@ -980,6 +1171,8 @@ function ChannelChip({
   on,
   handle,
   locked,
+  paused,
+  pinned,
   onToggle,
 }: {
   slug: string;
@@ -987,24 +1180,33 @@ function ChannelChip({
   on: boolean;
   handle: string | null | undefined;
   locked: boolean;
+  paused?: boolean;
+  pinned?: boolean;
   onToggle: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onToggle}
+      disabled={pinned}
       className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-bold ${
         on ? "bg-accent text-accent-fg" : "border border-line text-muted"
-      }`}
+      } ${pinned ? "cursor-not-allowed opacity-90" : ""}`}
     >
       <ChannelIcon slug={slug} className="size-4 rounded-md" />
       {label}
-      {handle ? (
+      {paused ? (
+        <span className="text-[10px] font-extrabold uppercase opacity-70">
+          paused
+        </span>
+      ) : handle ? (
         <span className="font-semibold opacity-80">
           {handle.startsWith("@") ? handle : `@${handle}`}
         </span>
       ) : on ? (
-        <span className="text-[10px] font-extrabold uppercase opacity-70">preview</span>
+        <span className="text-[10px] font-extrabold uppercase opacity-70">
+          {pinned ? "sent" : "preview"}
+        </span>
       ) : locked ? (
         <span className="text-[10px] font-extrabold uppercase opacity-70">off</span>
       ) : null}
@@ -1107,6 +1309,19 @@ type SavedPost = {
   targets: Array<{
     platform: string;
     status: string;
+    platformPostId?: string | null;
     failedReason: string | null;
   }>;
 };
+
+function canPatchLoaded(post: SavedPost) {
+  if (post.status === "PUBLISHING") return false;
+  if (
+    post.status === "DRAFT" ||
+    post.status === "SCHEDULED" ||
+    post.status === "FAILED"
+  ) {
+    return true;
+  }
+  return post.targets.some((target) => target.status === "FAILED");
+}

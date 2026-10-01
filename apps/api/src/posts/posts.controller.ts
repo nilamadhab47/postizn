@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -10,7 +11,11 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser, type JwtUser } from "../auth/current-user.decorator";
-import { PostsService, type CreatePostInput } from "./posts.service";
+import {
+  PostsService,
+  type CreatePostInput,
+  type UpdatePostInput,
+} from "./posts.service";
 
 @Controller("posts")
 @UseGuards(JwtAuthGuard)
@@ -32,12 +37,31 @@ export class PostsController {
     return this.posts.create(user.userId, body);
   }
 
-  @Patch(":id")
-  reschedule(
+  @Post(":id/retry")
+  retry(
     @CurrentUser() user: JwtUser,
     @Param("id") id: string,
-    @Body() body: { scheduledAt?: string },
+    @Body() body: { platform?: string },
   ) {
-    return this.posts.reschedule(user.userId, id, body.scheduledAt);
+    return this.posts.retry(user.userId, id, body?.platform);
+  }
+
+  @Post(":id/cancel")
+  cancel(@CurrentUser() user: JwtUser, @Param("id") id: string) {
+    return this.posts.cancel(user.userId, id);
+  }
+
+  @Patch(":id")
+  update(
+    @CurrentUser() user: JwtUser,
+    @Param("id") id: string,
+    @Body() body: UpdatePostInput,
+  ) {
+    return this.posts.update(user.userId, id, body);
+  }
+
+  @Delete(":id")
+  remove(@CurrentUser() user: JwtUser, @Param("id") id: string) {
+    return this.posts.remove(user.userId, id);
   }
 }

@@ -28,6 +28,9 @@ export type CalPost = {
   error?: string;
   at: string;
   canMove: boolean;
+  canCancel: boolean;
+  canRetry: boolean;
+  canDelete: boolean;
 };
 
 export type SavedPost = {
@@ -91,7 +94,7 @@ export function toCalPost(post: SavedPost): CalPost {
     title: first || (media ? `(${media.toLowerCase()} only)` : "(empty)"),
     body: post.content,
     platforms,
-    status: calStatus(post.status),
+    status: calStatus(post),
     account: platforms.map(channelLabel).join(" · ") || "postN",
     media,
     mediaUrl: file?.url ?? post.mediaUrls[0],
@@ -99,6 +102,11 @@ export function toCalPost(post: SavedPost): CalPost {
     error: post.failedReason ?? undefined,
     at,
     canMove: post.status === "SCHEDULED",
+    canCancel: post.status === "SCHEDULED",
+    canRetry:
+      post.status === "FAILED" ||
+      post.targets.some((target) => target.status === "FAILED"),
+    canDelete: post.status !== "PUBLISHING",
   };
 }
 
@@ -106,6 +114,21 @@ export async function reschedulePost(id: string, scheduledAt: string) {
   return api<SavedPost>(`/posts/${id}`, {
     method: "PATCH",
     body: JSON.stringify({ scheduledAt }),
+  });
+}
+
+export async function cancelPost(id: string) {
+  return api<SavedPost>(`/posts/${id}/cancel`, { method: "POST" });
+}
+
+export async function deletePost(id: string) {
+  return api<{ ok: boolean }>(`/posts/${id}`, { method: "DELETE" });
+}
+
+export async function retryPost(id: string, platform?: string) {
+  return api<SavedPost>(`/posts/${id}/retry`, {
+    method: "POST",
+    body: JSON.stringify(platform ? { platform } : {}),
   });
 }
 
@@ -148,8 +171,13 @@ export function formatCount(value: number) {
   }).format(value);
 }
 
-function calStatus(status: string): CalPostStatus {
-  if (status === "FAILED") return "failed";
-  if (status === "PUBLISHED") return "published";
+function calStatus(post: SavedPost): CalPostStatus {
+  if (
+    post.status === "FAILED" ||
+    post.targets.some((target) => target.status === "FAILED")
+  ) {
+    return "failed";
+  }
+  if (post.status === "PUBLISHED") return "published";
   return "scheduled";
 }

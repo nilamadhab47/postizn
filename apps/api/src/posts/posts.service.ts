@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -7,7 +8,7 @@ import {
   ServiceUnavailableException,
   forwardRef,
 } from "@nestjs/common";
-import { Platform, PostStatus, type Prisma } from "@prisma/client";
+import { Platform, PostStatus, Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import {
   PLATFORM_CHAR_LIMITS,
@@ -20,6 +21,7 @@ import { SocialService } from "../social/social.service";
 import { MediaService } from "../media/media.service";
 import { PublishQueue } from "../queue/publish.queue";
 import { NotificationsService } from "../notifications/notifications.service";
+import { EntitlementsService } from "../plan/entitlements.service";
 import { channelLabel } from "./channel-label";
 import { publicPublishError } from "./publish-error";
 
@@ -44,6 +46,8 @@ export type CreatePostInput = {
   mediaUrls?: string[];
 };
 
+export type UpdatePostInput = CreatePostInput;
+
 @Injectable()
 export class PostsService {
   private readonly log = new Logger(PostsService.name);
@@ -55,6 +59,7 @@ export class PostsService {
     @Inject(forwardRef(() => PublishQueue))
     private readonly publishQueue: PublishQueue,
     private readonly notifications: NotificationsService,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   async create(userId: string, input: CreatePostInput) {
@@ -80,16 +85,7 @@ export class PostsService {
       throw new BadRequestException("Draft is empty");
     }
 
-    const accounts = await this.prisma.socialAccount.findMany({
-      where: { userId, platform: { in: platforms }, isActive: true },
-    });
-    const byPlatform = new Map(accounts.map((row) => [row.platform, row]));
-    const missing = platforms.filter((platform) => !byPlatform.has(platform));
-    if (missing.length) {
-      throw new BadRequestException(
-        `Connect ${missing.map(channelLabel).join(", ")} before using ${action === "draft" ? "it in a draft" : "it here"}`,
-      );
-    }
+    const byPlatform = await this.requireLiveAccounts(userId, platforms);
 
     for (const platform of platforms) {
       const body = (overrides[platform] ?? content).trim();
@@ -137,11 +133,21 @@ export class PostsService {
       include: { targets: { include: { socialAccount: true } } },
     });
 
+    if (action === "schedule" || action === "now") {
+      try {
+        await this.entitlements.consumePost(userId);
+      } catch (err) {
+        await this.prisma.post.delete({ where: { id: post.id } });
+        throw err;
+      }
+    }
+
     if (action === "schedule") {
       try {
         await this.publishQueue.enqueue(post.id, scheduledAt!);
       } catch (err) {
         await this.prisma.post.delete({ where: { id: post.id } });
+        await this.entitlements.refundPost(userId);
         const message = err instanceof Error ? err.message : "queue failed";
         this.log.warn(`could not enqueue ${post.id}: ${message}`);
         throw new ServiceUnavailableException(
@@ -199,6 +205,283 @@ export class PostsService {
       );
     }
     return this.get(userId, id);
+  }
+
+  async update(userId: string, id: string, input: UpdatePostInput) {
+    const timeOnly =
+      input.scheduledAt !== undefined &&
+      input.action == null &&
+      input.content == null &&
+      input.contentByPlatform == null &&
+      input.platforms == null &&
+      input.mediaUrls == null;
+    if (timeOnly) {
+      return this.reschedule(userId, id, input.scheduledAt ?? undefined);
+    }
+
+    const existing = await this.prisma.post.findFirst({
+      where: { id, userId },
+      include: { targets: { include: { socialAccount: true } } },
+    });
+    if (!existing) throw new NotFoundException("Post not found");
+    if (existing.status === PostStatus.PUBLISHING) {
+      throw new BadRequestException("That post is sending. Try again in a moment");
+    }
+    const hasFailedTarget = existing.targets.some(
+      (target) => target.status === PostStatus.FAILED,
+    );
+    if (existing.status === PostStatus.PUBLISHED && !hasFailedTarget) {
+      throw new BadRequestException(
+        "That post already went out. Duplicate it from Compose",
+      );
+    }
+
+    const action = input.action ? this.parseAction(input.action) : "keep";
+    const content =
+      input.content !== undefined ? input.content.trim() : existing.content;
+    const platforms = input.platforms?.length
+      ? this.parsePlatforms(input.platforms)
+      : existing.targets.map((target) => target.socialAccount.platform);
+    const overrides = this.cleanOverrides(content, input.contentByPlatform);
+    const media = await this.media.ownedForUser(
+      userId,
+      (input.mediaUrls ?? existing.mediaUrls).filter(
+        (url) => typeof url === "string",
+      ),
+    );
+    const mediaUrls = media.map((item) => item.url);
+    const effectiveAction: PostAction =
+      action === "keep"
+        ? existing.status === PostStatus.SCHEDULED
+          ? "schedule"
+          : existing.status === PostStatus.DRAFT
+            ? "draft"
+            : "now"
+        : action;
+
+    if (effectiveAction !== "draft") {
+      const mediaError = mediaBundleError(media, platforms);
+      if (mediaError) throw new BadRequestException(mediaError);
+    }
+    if (
+      effectiveAction !== "draft" &&
+      !content &&
+      !Object.keys(overrides).length &&
+      !mediaUrls.length
+    ) {
+      throw new BadRequestException(
+        "Write something or attach a file before sending",
+      );
+    }
+    if (
+      effectiveAction === "draft" &&
+      !content &&
+      !Object.keys(overrides).length &&
+      !mediaUrls.length
+    ) {
+      throw new BadRequestException("Draft is empty");
+    }
+
+    const byPlatform = await this.requireLiveAccounts(userId, platforms);
+    for (const platform of platforms) {
+      const body = (overrides[platform] ?? content).trim();
+      if (effectiveAction !== "draft" && !body && !mediaUrls.length) {
+        throw new BadRequestException(`${channelLabel(platform)} has no text`);
+      }
+      const limit = PLATFORM_CHAR_LIMITS[platform as SharedPlatform];
+      if (limit && platformCharCount(platform as SharedPlatform, body) > limit) {
+        throw new BadRequestException(
+          `${channelLabel(platform)} is over ${limit.toLocaleString("en-IN")} characters`,
+        );
+      }
+    }
+
+    const unpublishedStatus =
+      effectiveAction === "draft"
+        ? PostStatus.DRAFT
+        : effectiveAction === "schedule"
+          ? PostStatus.SCHEDULED
+          : PostStatus.PUBLISHING;
+    const scheduledAt =
+      effectiveAction === "now"
+        ? new Date()
+        : effectiveAction === "draft"
+          ? input.scheduledAt !== undefined
+            ? this.parseSchedule("draft", input.scheduledAt)
+            : existing.scheduledAt
+          : this.parseSchedule(
+              "schedule",
+              input.scheduledAt ?? existing.scheduledAt?.toISOString() ?? null,
+            );
+
+    const charging =
+      existing.status === PostStatus.DRAFT &&
+      (effectiveAction === "schedule" || effectiveAction === "now");
+    if (charging) {
+      await this.entitlements.consumePost(userId);
+    }
+
+    const postStatus =
+      effectiveAction === "draft"
+        ? PostStatus.DRAFT
+        : effectiveAction === "schedule"
+          ? PostStatus.SCHEDULED
+          : PostStatus.PUBLISHING;
+
+    try {
+      await this.syncTargets(existing, platforms, byPlatform, unpublishedStatus);
+      await this.prisma.post.update({
+        where: { id },
+        data: {
+          content: content || Object.values(overrides)[0] || "",
+          contentByPlatform: Object.keys(overrides).length
+            ? (overrides as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
+          mediaUrls,
+          status: postStatus,
+          scheduledAt,
+          failedReason: effectiveAction === "now" ? null : existing.failedReason,
+        },
+      });
+    } catch (err) {
+      if (charging) await this.entitlements.refundPost(userId);
+      throw err;
+    }
+
+    if (effectiveAction === "schedule") {
+      try {
+        await this.publishQueue.enqueue(id, scheduledAt!);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "queue failed";
+        this.log.warn(`could not update queue for ${id}: ${message}`);
+        throw new ServiceUnavailableException(
+          "Scheduler is not reachable. Is Redis running on 6381?",
+        );
+      }
+      return this.get(userId, id);
+    }
+
+    await this.publishQueue.remove(id);
+    if (effectiveAction === "draft") {
+      await this.prisma.post.update({ where: { id }, data: { jobId: null } });
+      return this.get(userId, id);
+    }
+    return this.publishDue(id, { retryFailed: false });
+  }
+
+  async cancel(userId: string, id: string) {
+    const post = await this.prisma.post.findFirst({ where: { id, userId } });
+    if (!post) throw new NotFoundException("Post not found");
+    if (post.status !== PostStatus.SCHEDULED) {
+      throw new BadRequestException("Only queued posts can be cancelled");
+    }
+    await this.publishQueue.remove(id);
+    await this.prisma.postTarget.updateMany({
+      where: { postId: id, status: { not: PostStatus.PUBLISHED } },
+      data: { status: PostStatus.DRAFT },
+    });
+    await this.prisma.post.update({
+      where: { id },
+      data: { status: PostStatus.DRAFT, jobId: null },
+    });
+    await this.entitlements.refundPost(userId);
+    return this.get(userId, id);
+  }
+
+  async remove(userId: string, id: string) {
+    const post = await this.prisma.post.findFirst({ where: { id, userId } });
+    if (!post) throw new NotFoundException("Post not found");
+    if (post.status === PostStatus.PUBLISHING) {
+      throw new BadRequestException(
+        "That post is sending. Try again in a moment",
+      );
+    }
+    await this.publishQueue.remove(id);
+    await this.prisma.post.delete({ where: { id } });
+    if (post.status === PostStatus.SCHEDULED) {
+      await this.entitlements.refundPost(userId);
+    }
+    return { ok: true };
+  }
+
+  async retry(userId: string, id: string, platform?: string) {
+    const post = await this.prisma.post.findFirst({
+      where: { id, userId },
+      include: { targets: { include: { socialAccount: true } } },
+    });
+    if (!post) throw new NotFoundException("Post not found");
+    const wanted = platform?.trim().toUpperCase();
+    const failed = post.targets.filter(
+      (target) =>
+        target.status === PostStatus.FAILED &&
+        !target.platformPostId &&
+        (!wanted || target.socialAccount.platform === wanted),
+    );
+    if (!failed.length) {
+      throw new BadRequestException("Nothing failed on that post to retry");
+    }
+    await this.prisma.postTarget.updateMany({
+      where: { id: { in: failed.map((row) => row.id) } },
+      data: { status: PostStatus.PUBLISHING, failedReason: null },
+    });
+    await this.prisma.post.update({
+      where: { id },
+      data: { status: PostStatus.PUBLISHING, failedReason: null },
+    });
+    await this.publishQueue.remove(id);
+    return this.publishDue(id, { retryFailed: false });
+  }
+
+  private async syncTargets(
+    existing: Prisma.PostGetPayload<{
+      include: { targets: { include: { socialAccount: true } } };
+    }>,
+    platforms: Platform[],
+    byPlatform: Map<Platform, { id: string }>,
+    unpublishedStatus: PostStatus,
+  ) {
+    const wanted = new Set(platforms);
+    for (const target of existing.targets) {
+      const platform = target.socialAccount.platform;
+      if (wanted.has(platform)) continue;
+      if (target.platformPostId || target.status === PostStatus.PUBLISHED) {
+        throw new BadRequestException(
+          `${channelLabel(platform)} already went out and cannot be removed`,
+        );
+      }
+      await this.prisma.postTarget.delete({ where: { id: target.id } });
+    }
+    for (const platform of platforms) {
+      const current = existing.targets.find(
+        (target) => target.socialAccount.platform === platform,
+      );
+      const account = byPlatform.get(platform)!;
+      if (!current) {
+        await this.prisma.postTarget.create({
+          data: {
+            postId: existing.id,
+            socialAccountId: account.id,
+            status: unpublishedStatus,
+            idempotencyKey: randomUUID(),
+          },
+        });
+        continue;
+      }
+      if (current.platformPostId || current.status === PostStatus.PUBLISHED) {
+        continue;
+      }
+      await this.prisma.postTarget.update({
+        where: { id: current.id },
+        data: {
+          status: unpublishedStatus,
+          socialAccountId: account.id,
+          failedReason:
+            unpublishedStatus === PostStatus.PUBLISHING
+              ? null
+              : current.failedReason,
+        },
+      });
+    }
   }
 
   async get(userId: string, id: string) {
@@ -368,6 +651,28 @@ export class PostsService {
       throw new Error(failedReason ?? "Publish failed");
     }
     return presented;
+  }
+
+  private async requireLiveAccounts(userId: string, platforms: Platform[]) {
+    const accounts = await this.prisma.socialAccount.findMany({
+      where: { userId, platform: { in: platforms }, isActive: true },
+    });
+    const paused = accounts.filter((row) => row.pausedByPlan);
+    if (paused.length) {
+      throw new ForbiddenException(
+        `${paused.map((row) => channelLabel(row.platform)).join(", ")} ${
+          paused.length === 1 ? "is" : "are"
+        } paused until Pro. Upgrade to send.`,
+      );
+    }
+    const byPlatform = new Map(accounts.map((row) => [row.platform, row]));
+    const missing = platforms.filter((platform) => !byPlatform.has(platform));
+    if (missing.length) {
+      throw new BadRequestException(
+        `Connect ${missing.map(channelLabel).join(", ")} first`,
+      );
+    }
+    return byPlatform;
   }
 
   private parseAction(raw?: string): PostAction {

@@ -114,6 +114,7 @@ export function IstDateTimePicker({
               items={["AM", "PM"] as const}
               value={period}
               format={(item) => item}
+              scroll={false}
               onSelect={(next) =>
                 commit(merge(selected, to24(hour12, next), minute))
               }
@@ -165,18 +166,26 @@ function TimeColumn<T extends string | number>({
   value,
   format,
   onSelect,
+  scroll = true,
 }: {
   label: string;
   items: readonly T[];
   value: T;
   format: (item: T) => string;
   onSelect: (item: T) => void;
+  scroll?: boolean;
 }) {
+  const list = useRef<HTMLDivElement>(null);
   const active = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    active.current?.scrollIntoView({ block: "center" });
-  }, [value]);
+    const root = list.current;
+    const button = active.current;
+    if (!root || !button || !scroll) return;
+    const top =
+      button.offsetTop - root.clientHeight / 2 + button.clientHeight / 2;
+    root.scrollTo({ top: Math.max(0, top), behavior: "instant" });
+  }, [value, scroll]);
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
@@ -187,7 +196,14 @@ function TimeColumn<T extends string | number>({
       ) : (
         <p className="mb-1 h-4" />
       )}
-      <div className="flex max-h-56 flex-col gap-0.5 overflow-y-auto pr-0.5">
+      <div
+        ref={list}
+        className={
+          scroll
+            ? "flex max-h-56 flex-col gap-0.5 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            : "flex flex-col gap-0.5"
+        }
+      >
         {items.map((item) => {
           const on = item === value;
           return (

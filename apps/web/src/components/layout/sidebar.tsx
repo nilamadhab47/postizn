@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { NotificationBell } from "@/components/layout/notification-bell";
+import { UserAvatar } from "@/components/layout/user-avatar";
 
 const primary = [
   { href: "/dashboard", label: "Home" },
@@ -17,6 +18,7 @@ const primary = [
 
 const secondary = [
   { href: "/analytics", label: "Analytics" },
+  { href: "/profile", label: "Profile" },
   { href: "/settings", label: "Settings" },
 ];
 
@@ -48,10 +50,17 @@ export function Sidebar() {
         </Suspense>
       </nav>
       <div className="border-t border-line p-4">
-        <p className="truncate text-base font-bold">{user?.name ?? "Account"}</p>
-        <p className="truncate text-sm text-muted">{user?.email}</p>
-        <p className="mt-1 text-xs font-bold uppercase tracking-wider text-accent">
-          {user?.plan}
+        <Link href="/profile" className="flex items-center gap-3 rounded-xl hover:bg-card">
+          <UserAvatar name={user?.name} image={user?.image} className="size-10" />
+          <span className="min-w-0">
+            <p className="truncate text-base font-bold">{user?.name ?? "Account"}</p>
+            <p className="truncate text-sm text-muted">{user?.email}</p>
+          </span>
+        </Link>
+        <p className="mt-2 text-xs font-bold uppercase tracking-wider text-accent">
+          {user?.entitlements?.access === "FREE"
+            ? "Trial ended"
+            : (user?.entitlements?.access ?? user?.plan)}
         </p>
         <button
           type="button"

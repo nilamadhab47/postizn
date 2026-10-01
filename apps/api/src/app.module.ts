@@ -10,6 +10,8 @@ import { MediaModule } from "./media/media.module";
 import { QueueModule } from "./queue/queue.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { WaitlistModule } from "./waitlist/waitlist.module";
+import { PlanModule } from "./plan/plan.module";
+import { BillingModule } from "./billing/billing.module";
 import { HealthController } from "./health.controller";
 
 @Module({
@@ -19,6 +21,8 @@ import { HealthController } from "./health.controller";
       envFilePath: [".env"],
     }),
     PrismaModule,
+    PlanModule,
+    BillingModule,
     AuthModule,
     StorageModule,
     SocialModule,

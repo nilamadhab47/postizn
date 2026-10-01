@@ -14,10 +14,7 @@ import { ProviderRegistry } from "./providers/provider.registry";
 import { newCodeVerifier } from "./providers/pkce";
 import type { AuthResult, BaseProvider } from "./providers/base-provider";
 import { SOON_CHANNELS, GONE_CHANNELS } from "./channel-catalog";
-import {
-  canUsePaidChannel,
-  channelLimit,
-} from "../plan/entitlements";
+import { EntitlementsService } from "../plan/entitlements.service";
 
 @Injectable()
 export class SocialService {
@@ -28,6 +25,7 @@ export class SocialService {
     private readonly config: ConfigService,
     private readonly registry: ProviderRegistry,
     private readonly oauthState: OauthStateStore,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   catalog(userId: string) {
@@ -40,8 +38,9 @@ export class SocialService {
     const existing = await this.prisma.socialAccount.findFirst({
       where: { userId, platform: provider.platform },
     });
-    this.assertPlan(user.plan, provider);
-    await this.assertChannelCap(userId, user.plan, Boolean(existing));
+    const access = await this.entitlements.syncChannelAccess(userId);
+    this.assertPlan(access.canUsePaidChannel, provider);
+    await this.assertChannelCap(userId, access.channelLimit, Boolean(existing));
 
     if (provider.connectMode === "token") {
       throw new BadRequestException("This channel uses a token form");
@@ -71,8 +70,9 @@ export class SocialService {
     const existing = await this.prisma.socialAccount.findFirst({
       where: { userId, platform: provider.platform },
     });
-    this.assertPlan(user.plan, provider);
-    await this.assertChannelCap(userId, user.plan, Boolean(existing));
+    const access = await this.entitlements.syncChannelAccess(userId);
+    this.assertPlan(access.canUsePaidChannel, provider);
+    await this.assertChannelCap(userId, access.channelLimit, Boolean(existing));
 
     try {
       const profile = await provider.authenticateToken(fields);
@@ -91,6 +91,11 @@ export class SocialService {
     if (!account) {
       throw new NotFoundException("Channel not found");
     }
+    if (account.pausedByPlan) {
+      throw new ForbiddenException(
+        "This channel is paused until Pro. Upgrade to send.",
+      );
+    }
     const text =
       (content?.trim() || `postN test · ${new Date().toISOString()}`).slice(0, 2000);
     try {
@@ -107,6 +112,9 @@ export class SocialService {
     content: string,
     media: { url: string; mimeType: string; bytes: number }[] = [],
   ) {
+    if (account.pausedByPlan) {
+      throw new Error("This channel is paused until Pro. Upgrade to send.");
+    }
     if (account.isMock) {
       throw new Error("Reconnect the live channel before publishing");
     }
@@ -219,27 +227,22 @@ export class SocialService {
   }
 
   private async buildCatalog(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { plan: true },
-    });
+    const access = await this.entitlements.syncChannelAccess(userId);
     const accounts = await this.prisma.socialAccount.findMany({
       where: { userId },
       orderBy: { createdAt: "asc" },
     });
     const byPlatform = new Map(accounts.map((row) => [row.platform, row]));
-    const limit = channelLimit(user?.plan === "PRO" ? "PRO" : "FREE");
-    const used = accounts.length;
+    const used = accounts.filter((row) => row.isActive && !row.pausedByPlan).length;
 
     return {
-      plan: user?.plan === "PRO" ? "PRO" : "FREE",
-      limit,
+      plan: access.access,
+      limit: access.channelLimit,
       used,
       providers: [
         ...this.registry.all().map((provider) => {
           const account = byPlatform.get(provider.platform);
-          const locked =
-            provider.plan === "PRO" && !canUsePaidChannel(user?.plan === "PRO" ? "PRO" : "FREE");
+          const locked = provider.plan === "PRO" && !access.canUsePaidChannel;
           return {
             slug: provider.slug,
             platform: provider.platform,
@@ -261,7 +264,7 @@ export class SocialService {
           connectMode: "soon" as const,
           blurb: row.blurb,
           configured: false,
-          locked: !canUsePaidChannel(user?.plan === "PRO" ? "PRO" : "FREE"),
+          locked: !access.canUsePaidChannel,
           tokenFields: [],
           account: null,
         })),
@@ -300,6 +303,7 @@ export class SocialService {
       tokenExpiry: profile.tokenExpiry ?? null,
       isActive: true,
       isMock,
+      pausedByPlan: false,
     };
 
     const existing = await this.prisma.socialAccount.findFirst({
@@ -334,20 +338,21 @@ export class SocialService {
     return user;
   }
 
-  private assertPlan(plan: "FREE" | "PRO", provider: BaseProvider) {
-    if (provider.plan === "PRO" && !canUsePaidChannel(plan)) {
-      throw new ForbiddenException("This channel is on PRO");
+  private assertPlan(canUsePaid: boolean, provider: BaseProvider) {
+    if (provider.plan === "PRO" && !canUsePaid) {
+      throw new ForbiddenException("This channel is on Pro");
     }
   }
 
   private async assertChannelCap(
     userId: string,
-    plan: "FREE" | "PRO",
+    limit: number,
     replacing: boolean,
   ) {
     if (replacing) return;
-    const used = await this.prisma.socialAccount.count({ where: { userId } });
-    const limit = channelLimit(plan);
+    const used = await this.prisma.socialAccount.count({
+      where: { userId, ...this.entitlements.usableWhere() },
+    });
     if (used >= limit) {
       throw new ForbiddenException(`Channel limit reached (${limit})`);
     }
@@ -400,6 +405,7 @@ function publicAccount(row: {
   avatar: string | null;
   isActive: boolean;
   isMock?: boolean;
+  pausedByPlan?: boolean;
 }) {
   return {
     id: row.id,
@@ -410,6 +416,7 @@ function publicAccount(row: {
     avatar: row.avatar,
     isActive: row.isActive,
     isMock: Boolean(row.isMock),
+    pausedByPlan: Boolean(row.pausedByPlan),
   };
 }
 

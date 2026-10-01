@@ -42,19 +42,57 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export type AccessId = "FREE" | "TRIAL" | "PRO" | "STUDIO";
+
 export type Me = {
   id: string;
   email: string;
   name: string | null;
   image: string | null;
-  plan: "FREE" | "PRO";
+  plan: AccessId;
   timezone: string;
+  createdAt?: string;
+  emailVerified?: boolean;
+  hasPassword?: boolean;
+  logins?: {
+    google: boolean;
+    linkedin: boolean;
+    twitter: boolean;
+  };
+  setup?: {
+    channels: number;
+    posts: number;
+  };
   entitlements?: {
-    plan: "FREE" | "PRO";
+    plan: AccessId;
+    access?: AccessId;
+    billingExempt?: boolean;
+    trialEndsAt?: string | null;
+    trialDaysRemaining?: number | null;
     channelLimit: number;
+    postsPerDay?: number;
+    postsToday?: number;
+    postsTodayRemaining?: number | null;
     postsPerMonth: number | null;
+    postsUsed?: number;
+    postsRemaining?: number | null;
     imageCap: number | null;
+    imageUsed?: number;
+    imageRemaining?: number | null;
+    aiCap?: number;
+    aiUsed?: number;
+    aiRemaining?: number | null;
+    canUsePaidChannel?: boolean;
     freeChannels: string[];
     proChannels: string[];
   };
 };
+
+export const PROFILE_TIMEZONES = [
+  { id: "Asia/Kolkata", label: "India (IST)" },
+  { id: "Asia/Dubai", label: "Dubai (GST)" },
+  { id: "Asia/Singapore", label: "Singapore (SGT)" },
+  { id: "UTC", label: "UTC" },
+  { id: "Europe/London", label: "London" },
+  { id: "America/New_York", label: "New York" },
+] as const;

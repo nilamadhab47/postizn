@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN "billingExempt" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "User" ADD COLUMN "imageGensUsed" INTEGER NOT NULL DEFAULT 0;
+
+-- AlterTable
+ALTER TABLE "SocialAccount" ADD COLUMN "pausedByPlan" BOOLEAN NOT NULL DEFAULT false;

@@ -65,7 +65,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="mt-8 flex flex-col gap-3">
+    <form onSubmit={onSubmit} className="mt-1 flex flex-col gap-3">
       {isRegister ? (
         <label className="block">
           <span className="text-xs text-muted">Name</span>

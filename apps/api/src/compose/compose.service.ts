@@ -3,26 +3,51 @@ import {
   Injectable,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { PrismaService } from "../prisma/prisma.service";
-import { imageCap } from "../plan/entitlements";
+import { EntitlementsService } from "../plan/entitlements.service";
 
-const imageUses = new Map<string, number>();
+type GeminiInline = {
+  data?: string;
+  mimeType?: string;
+  mime_type?: string;
+};
 
+type GeminiImageJson = {
+  error?: { message?: string };
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        inlineData?: GeminiInline;
+        inline_data?: GeminiInline;
+      }>;
+    };
+  }>;
+  output_image?: GeminiInline;
+  outputImage?: GeminiInline;
+};
 
 @Injectable()
 export class ComposeService {
   constructor(
     private readonly config: ConfigService,
-    private readonly prisma: PrismaService,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   async variations(userId: string, draft: string, topic?: string) {
+    await this.entitlements.assertAi(userId);
     const seed = (topic?.trim() || draft.trim() || "D2C drop in India").slice(
       0,
       800,
     );
     const key = this.anthropicKey();
-    if (!key) return { source: "demo" as const, items: this.demoVariations(seed) };
+    if (!key) {
+      const billed = await this.entitlements.consumeAi(userId);
+      return {
+        source: "demo" as const,
+        items: this.demoVariations(seed),
+        remaining: billed.remaining,
+        cap: billed.cap,
+      };
+    }
 
     const prompt = `You write for Indian founders and D2C brands on postN.
 Return JSON only: {"items":["...","...","...","...","..."]} — exactly 5 strings.
@@ -35,10 +60,17 @@ Draft/topic:\n${seed}`;
 
     const text = await this.claude(key, prompt);
     const items = this.parseList(text);
-    return { source: "claude" as const, items: items.length ? items : this.demoVariations(seed) };
+    const billed = await this.entitlements.consumeAi(userId);
+    return {
+      source: "haiku" as const,
+      items: items.length ? items : this.demoVariations(seed),
+      remaining: billed.remaining,
+      cap: billed.cap,
+    };
   }
 
   async suggest(userId: string, draft: string, kind: string) {
+    await this.entitlements.assertAi(userId);
     const seed = draft.trim() || "mango drop this week";
     const key = this.anthropicKey();
     const jobs: Record<string, string> = {
@@ -48,21 +80,27 @@ Draft/topic:\n${seed}`;
     };
     const instruction = jobs[kind] ?? jobs.india;
     if (!key) {
-      return { source: "demo" as const, text: this.demoSuggest(seed, kind) };
+      const billed = await this.entitlements.consumeAi(userId);
+      return {
+        source: "demo" as const,
+        text: this.demoSuggest(seed, kind),
+        remaining: billed.remaining,
+        cap: billed.cap,
+      };
     }
     const text = await this.claude(
       key,
       `${instruction}\n\nDraft:\n${seed}\n\nReturn only the result text.`,
     );
-    return { source: "claude" as const, text: text.trim() };
+    const billed = await this.entitlements.consumeAi(userId);
+    return { source: "haiku" as const, text: text.trim(), remaining: billed.remaining, cap: billed.cap };
   }
 
-  async generateImage(userId: string, prompt: string, plan: "FREE" | "PRO") {
-    const used = imageUses.get(userId) ?? 0;
-    const cap = imageCap(plan);
-    if (cap != null && used >= cap) {
+  async generateImage(userId: string, prompt: string) {
+    const status = await this.entitlements.imageStatus(userId);
+    if (status.remaining <= 0) {
       throw new BadRequestException(
-        "Test image cap reached. PRO unlocks more generations.",
+        `${status.plan === "TRIAL" ? "Trial" : status.plan === "PRO" ? "Pro" : status.plan === "STUDIO" ? "Studio" : "This account"} includes ${status.cap} image gens. Upgrade for more.`,
       );
     }
     const key = this.googleKey();
@@ -75,64 +113,24 @@ Draft/topic:\n${seed}`;
     if (!idea) {
       throw new BadRequestException("Describe the image you want.");
     }
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${key}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: `Generate a social post image, 1:1, photoreal, no watermarks, no letters on the image. ${idea}`,
-                },
-              ],
-            },
-          ],
-          generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
-        }),
-      },
-    );
-    const json = (await res.json()) as {
-      error?: { message?: string };
-      candidates?: Array<{
-        content?: { parts?: Array<{ inlineData?: { data?: string; mimeType?: string } }> };
-      }>;
-    };
-    if (!res.ok) {
-      throw new BadRequestException(json.error?.message ?? "Image generation failed");
-    }
-    const inline = json.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data)
-      ?.inlineData;
+    const model =
+      this.config.get<string>("GEMINI_IMAGE_MODEL")?.trim() ||
+      "gemini-3.1-flash-image";
+    const promptText = `Generate a social post image, 1:1, photoreal, no watermarks, no letters on the image. ${idea}`;
+    const inline = await this.geminiImage(key, model, promptText);
     if (!inline?.data) {
       throw new BadRequestException("Model returned no image. Try a simpler prompt.");
     }
-    if (cap != null) imageUses.set(userId, used + 1);
-    const remaining = cap == null ? null : cap - used - 1;
+    const billed = await this.entitlements.consumeImage(userId);
     return {
       dataUrl: `data:${inline.mimeType ?? "image/png"};base64,${inline.data}`,
-      remaining,
-      cap,
+      remaining: billed.remaining,
+      cap: billed.cap,
     };
   }
 
-  async planOf(userId: string): Promise<"FREE" | "PRO"> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { plan: true },
-    });
-    return user?.plan === "PRO" ? "PRO" : "FREE";
-  }
-
-  imageStatus(userId: string, plan: "FREE" | "PRO") {
-    const used = imageUses.get(userId) ?? 0;
-    const cap = imageCap(plan);
-    return {
-      plan,
-      cap,
-      remaining: cap == null ? null : Math.max(0, cap - used),
-    };
+  imageStatus(userId: string) {
+    return this.entitlements.imageStatus(userId);
   }
 
   private anthropicKey() {
@@ -147,6 +145,85 @@ Draft/topic:\n${seed}`;
     );
   }
 
+  /** Gemini 3.1 Flash Image. 2.5 Flash Image retired 2 Oct 2026. */
+  private async geminiImage(key: string, model: string, text: string) {
+    const viaContent = await this.geminiGenerateContent(key, model, text);
+    if (viaContent.ok && viaContent.image) return viaContent.image;
+    const viaInteractions = await this.geminiInteractions(key, model, text);
+    if (viaInteractions.image) return viaInteractions.image;
+    if (!viaContent.ok) {
+      throw new BadRequestException(viaContent.error ?? "Image generation failed");
+    }
+    if (!viaInteractions.ok) {
+      throw new BadRequestException(viaInteractions.error ?? "Image generation failed");
+    }
+    return null;
+  }
+
+  private async geminiGenerateContent(key: string, model: string, text: string) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${key}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text }] }],
+          generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
+        }),
+      },
+    );
+    const json = (await res.json()) as GeminiImageJson;
+    return {
+      ok: res.ok,
+      error: json.error?.message,
+      image: this.pickGeminiImage(json),
+    };
+  }
+
+  private async geminiInteractions(key: string, model: string, text: string) {
+    const res = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/interactions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": key,
+        },
+        body: JSON.stringify({
+          model,
+          input: [{ type: "text", text }],
+        }),
+      },
+    );
+    const json = (await res.json()) as GeminiImageJson;
+    return {
+      ok: res.ok,
+      error: json.error?.message,
+      image: this.pickGeminiImage(json),
+    };
+  }
+
+  private pickGeminiImage(json: GeminiImageJson) {
+    const parts = json.candidates?.[0]?.content?.parts ?? [];
+    for (const part of parts) {
+      const inline = part.inlineData ?? part.inline_data;
+      if (inline?.data) {
+        return {
+          data: inline.data,
+          mimeType: inline.mimeType ?? inline.mime_type ?? "image/png",
+        };
+      }
+    }
+    const output = json.output_image ?? json.outputImage;
+    if (output?.data) {
+      return {
+        data: output.data,
+        mimeType: output.mimeType ?? output.mime_type ?? "image/png",
+      };
+    }
+    return null;
+  }
+
   private async claude(key: string, prompt: string) {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -156,7 +233,7 @@ Draft/topic:\n${seed}`;
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5",
+        model: "claude-haiku-4-5",
         max_tokens: 1200,
         messages: [{ role: "user", content: prompt }],
       }),

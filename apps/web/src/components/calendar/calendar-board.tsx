@@ -235,6 +235,27 @@ export function CalendarBoard() {
           queue={active.queue}
           onClose={() => setActive(null)}
           onSelect={(post) => setActive({ post, queue: active.queue })}
+          onMutated={(next) => {
+            const id = active.post.id;
+            if (!next) {
+              setPosts((rows) => rows.filter((row) => row.id !== id));
+              setActive(null);
+              return;
+            }
+            setPosts((rows) =>
+              rows.map((row) => (row.id === next.id ? next : row)),
+            );
+            setActive((cur) =>
+              cur
+                ? {
+                    post: next,
+                    queue: cur.queue.map((row) =>
+                      row.id === next.id ? next : row,
+                    ),
+                  }
+                : cur,
+            );
+          }}
         />
       ) : null}
     </div>

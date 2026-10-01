@@ -1,9 +1,20 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { composeHref, hourLabel } from "@/lib/calendar";
-import type { CalPlatform, CalPost, CalPostStatus } from "@/lib/calendar-posts";
+import {
+  cancelPost,
+  deletePost,
+  retryPost,
+  toCalPost,
+  type CalPlatform,
+  type CalPost,
+  type CalPostStatus,
+} from "@/lib/calendar-posts";
+import { ApiError } from "@/lib/api";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ChannelIcon } from "@/components/accounts/channel-icons";
 import { channelLabel, platformSlug } from "@/lib/platforms";
 import {
@@ -280,12 +291,14 @@ export function PostModal({
   queue,
   onClose,
   onSelect,
+  onMutated,
   metrics,
 }: {
   post: CalPost;
   queue: CalPost[];
   onClose: () => void;
   onSelect: (post: CalPost) => void;
+  onMutated?: (next: CalPost | null) => void;
   metrics?: {
     impressions: number;
     likes: number;
@@ -294,6 +307,8 @@ export function PostModal({
     clicks: number;
   };
 }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<"cancel" | "delete" | null>(null);
   const index = Math.max(
     0,
     queue.findIndex((item) => item.id === post.id),
@@ -305,9 +320,69 @@ export function PostModal({
     day: "numeric",
     month: "short",
   });
+  const locked = Boolean(busy);
+
+  async function runRetry() {
+    if (locked) return;
+    setBusy("retry");
+    try {
+      const saved = await retryPost(post.id);
+      const updated = toCalPost(saved);
+      onMutated?.(updated);
+      toast.success(
+        updated.status === "failed"
+          ? "Still failed on a channel"
+          : "Sent to the failed channel",
+      );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not retry");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runCancel() {
+    if (locked) return;
+    setBusy("cancel");
+    try {
+      await cancelPost(post.id);
+      setConfirm(null);
+      onMutated?.(null);
+      onClose();
+      toast.success("Moved to drafts");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not cancel");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runDelete() {
+    if (locked) return;
+    setBusy("delete");
+    try {
+      await deletePost(post.id);
+      setConfirm(null);
+      onMutated?.(null);
+      onClose();
+      toast.success("Post deleted");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not delete");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   return (
-    <Overlay onClose={onClose}>
+    <Overlay
+      onClose={() => {
+        if (confirm) {
+          if (!busy) setConfirm(null);
+          return;
+        }
+        onClose();
+      }}
+    >
       <div className="flex max-h-[min(760px,90vh)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-line bg-card shadow-2xl">
         <header className="flex items-start justify-between gap-4 px-6 pt-5">
           <div className="min-w-0">
@@ -333,7 +408,15 @@ export function PostModal({
               {post.account}
             </p>
           </div>
-          <CloseButton onClick={onClose} />
+          <CloseButton
+            onClick={() => {
+              if (confirm) {
+                if (!busy) setConfirm(null);
+                return;
+              }
+              onClose();
+            }}
+          />
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
@@ -448,24 +531,72 @@ export function PostModal({
             )}
           </div>
           <div className="flex flex-wrap gap-2">
-            {post.status === "failed" ? (
-              <Link
-                href={`/compose?post=${post.id}`}
-                className="rounded-xl bg-today px-3 py-2 text-sm font-bold text-white"
+            {post.canRetry ? (
+              <button
+                type="button"
+                disabled={locked}
+                onClick={() => void runRetry()}
+                className="rounded-xl bg-today px-3 py-2 text-sm font-bold text-white disabled:opacity-40"
               >
-                Retry
-              </Link>
-            ) : (
-              <Link
-                href={`/compose?post=${post.id}`}
-                className="rounded-xl bg-accent px-3 py-2 text-sm font-bold text-accent-fg"
+                {busy === "retry" ? "Retrying…" : "Retry"}
+              </button>
+            ) : null}
+            <Link
+              href={`/compose?post=${post.id}`}
+              className="rounded-xl bg-accent px-3 py-2 text-sm font-bold text-accent-fg"
+            >
+              {post.status === "published" && !post.canRetry
+                ? "Duplicate"
+                : "Edit"}
+            </Link>
+            {post.canCancel ? (
+              <button
+                type="button"
+                disabled={locked}
+                onClick={() => setConfirm("cancel")}
+                className="rounded-xl border border-line px-3 py-2 text-sm font-semibold disabled:opacity-40"
               >
-                {post.status === "published" ? "Duplicate" : "Edit"}
-              </Link>
-            )}
+                {busy === "cancel" ? "Cancelling…" : "Cancel"}
+              </button>
+            ) : null}
+            {post.canDelete ? (
+              <button
+                type="button"
+                disabled={locked}
+                onClick={() => setConfirm("delete")}
+                className="rounded-xl border border-line px-3 py-2 text-sm font-semibold text-today disabled:opacity-40"
+              >
+                {busy === "delete" ? "Deleting…" : "Delete"}
+              </button>
+            ) : null}
           </div>
         </footer>
       </div>
+      <ConfirmDialog
+        open={confirm === "cancel"}
+        onOpenChange={(open) => {
+          if (!open) setConfirm(null);
+        }}
+        title="Move to drafts?"
+        description="This post leaves the queue. You can schedule it again from Compose."
+        confirmLabel="Move to drafts"
+        cancelLabel="Keep queued"
+        busy={busy === "cancel"}
+        onConfirm={() => void runCancel()}
+      />
+      <ConfirmDialog
+        open={confirm === "delete"}
+        onOpenChange={(open) => {
+          if (!open) setConfirm(null);
+        }}
+        title="Delete this post?"
+        description="This cannot be undone. It will be removed from postN."
+        confirmLabel="Delete post"
+        cancelLabel="Keep post"
+        tone="danger"
+        busy={busy === "delete"}
+        onConfirm={() => void runDelete()}
+      />
     </Overlay>
   );
 }

@@ -8,7 +8,8 @@ import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import * as bcrypt from "bcryptjs";
 import { PrismaService } from "../prisma/prisma.service";
-import { entitlements } from "../plan/entitlements";
+import { EntitlementsService } from "../plan/entitlements.service";
+import { trialStartData } from "../plan/entitlements";
 
 export type GoogleProfile = {
   googleId: string;
@@ -18,8 +19,27 @@ export type GoogleProfile = {
   emailVerified?: boolean;
 };
 
+export type OauthProvider = "google" | "linkedin" | "twitter";
+
+export type OauthProfile = {
+  provider: OauthProvider;
+  providerId: string;
+  email?: string;
+  name?: string;
+  image?: string;
+  emailVerified?: boolean;
+};
+
 export const SESSION_COOKIE = "postn_session";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const ALLOWED_TIMEZONES = [
+  "Asia/Kolkata",
+  "Asia/Dubai",
+  "Asia/Singapore",
+  "UTC",
+  "Europe/London",
+  "America/New_York",
+] as const;
 
 export type CredentialsInput = {
   email: string;
@@ -33,6 +53,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   isGoogleConfigured() {
@@ -74,7 +95,7 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(password, 12);
     return this.prisma.user.create({
-      data: { email, passwordHash, name, plan: "FREE" },
+      data: { email, passwordHash, name, plan: "FREE", ...trialStartData() },
     });
   }
 
@@ -95,37 +116,103 @@ export class AuthService {
     return user;
   }
 
-  /** Parked — Google login is not exposed. Kept for when OAuth returns. */
   async upsertGoogleUser(profile: GoogleProfile) {
+    return this.upsertOauthUser({
+      provider: "google",
+      providerId: profile.googleId,
+      email: profile.email,
+      name: profile.name,
+      image: profile.image,
+      emailVerified: profile.emailVerified,
+    });
+  }
+
+  async upsertOauthUser(profile: OauthProfile) {
+    const email = this.oauthEmail(profile);
     const existing = await this.prisma.user.findFirst({
       where: {
-        OR: [{ googleId: profile.googleId }, { email: profile.email }],
+        OR: [this.oauthIdWhere(profile), ...(email ? [{ email }] : [])],
       },
     });
 
+    const verifiedAt = profile.emailVerified ? new Date() : undefined;
+    const ids = this.oauthIds(profile);
+
     if (existing) {
+      const alreadyLinked = this.linkedId(existing, profile.provider);
+      if (alreadyLinked && alreadyLinked !== profile.providerId) {
+        throw new ConflictException(
+          "This email is already linked to a different account",
+        );
+      }
       return this.prisma.user.update({
         where: { id: existing.id },
         data: {
-          googleId: profile.googleId,
-          name: profile.name ?? existing.name,
-          image: profile.image ?? existing.image,
-          emailVerified: profile.emailVerified
-            ? new Date()
-            : existing.emailVerified,
+          ...ids,
+          name: existing.name ?? profile.name,
+          image: existing.image ?? profile.image,
+          emailVerified: verifiedAt ?? existing.emailVerified,
         },
       });
     }
 
     return this.prisma.user.create({
       data: {
-        email: profile.email,
-        googleId: profile.googleId,
+        email: email ?? this.syntheticEmail(profile),
+        ...ids,
         name: profile.name,
         image: profile.image,
-        emailVerified: profile.emailVerified ? new Date() : null,
+        emailVerified: verifiedAt ?? null,
+        plan: "FREE",
+        ...trialStartData(),
       },
     });
+  }
+
+  async updateProfile(
+    userId: string,
+    input: { name?: string; timezone?: string; image?: string | null },
+  ) {
+    const data: {
+      name?: string | null;
+      timezone?: string;
+      image?: string | null;
+    } = {};
+
+    if (input.name !== undefined) {
+      const name = input.name.trim();
+      if (!name) {
+        throw new BadRequestException("Enter your name");
+      }
+      if (name.length > 80) {
+        throw new BadRequestException("Name must be under 80 characters");
+      }
+      data.name = name;
+    }
+
+    if (input.timezone !== undefined) {
+      if (!(ALLOWED_TIMEZONES as readonly string[]).includes(input.timezone)) {
+        throw new BadRequestException("Pick a timezone from the list");
+      }
+      data.timezone = input.timezone;
+    }
+
+    if (input.image !== undefined) {
+      if (input.image === null || input.image === "") {
+        data.image = null;
+      } else if (!/^https?:\/\//i.test(input.image)) {
+        throw new BadRequestException("Photo URL is not valid");
+      } else {
+        data.image = input.image;
+      }
+    }
+
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException("Nothing to update");
+    }
+
+    await this.prisma.user.update({ where: { id: userId }, data });
+    return this.getMe(userId);
   }
 
   signSession(userId: string) {
@@ -133,24 +220,75 @@ export class AuthService {
   }
 
   async getMe(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        image: true,
-        plan: true,
-        timezone: true,
-        createdAt: true,
-      },
-    });
+    const [user, channels, posts, access] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          image: true,
+          plan: true,
+          timezone: true,
+          createdAt: true,
+          emailVerified: true,
+          passwordHash: true,
+          googleId: true,
+          linkedinId: true,
+          twitterId: true,
+        },
+      }),
+      this.prisma.socialAccount.count({
+        where: { userId, isActive: true, pausedByPlan: false },
+      }),
+      this.prisma.post.count({ where: { userId } }),
+      this.entitlements.resolve(userId),
+    ]);
 
     if (!user) {
       throw new UnauthorizedException();
     }
 
-    return { ...user, entitlements: entitlements(user.plan) };
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      image: user.image,
+      plan: access.access,
+      timezone: user.timezone,
+      createdAt: user.createdAt.toISOString(),
+      emailVerified: Boolean(user.emailVerified),
+      hasPassword: Boolean(user.passwordHash),
+      logins: {
+        google: Boolean(user.googleId),
+        linkedin: Boolean(user.linkedinId),
+        twitter: Boolean(user.twitterId),
+      },
+      setup: { channels, posts },
+      entitlements: {
+        plan: access.access,
+        access: access.access,
+        billingExempt: access.billingExempt,
+        trialEndsAt: access.trialEndsAt,
+        trialDaysRemaining: access.trialDaysRemaining,
+        channelLimit: access.channelLimit,
+        postsPerDay: access.postsPerDay,
+        postsToday: access.postsToday,
+        postsTodayRemaining: access.postsTodayRemaining,
+        postsPerMonth: access.postsPerMonth,
+        postsUsed: access.postsUsed,
+        postsRemaining: access.postsRemaining,
+        imageCap: access.imageCap,
+        imageUsed: access.imageUsed,
+        imageRemaining: access.imageRemaining,
+        aiCap: access.aiCap,
+        aiUsed: access.aiUsed,
+        aiRemaining: access.aiRemaining,
+        canUsePaidChannel: access.canUsePaidChannel,
+        freeChannels: access.freeChannels,
+        proChannels: access.proChannels,
+      },
+    };
   }
 
   private requireEmail(raw: string) {
@@ -166,5 +304,44 @@ export class AuthService {
       throw new BadRequestException("Password must be at least 8 characters");
     }
     return password;
+  }
+
+  private oauthEmail(profile: OauthProfile) {
+    const email = profile.email?.trim().toLowerCase() ?? "";
+    if (!EMAIL_RE.test(email)) return undefined;
+    return email;
+  }
+
+  private syntheticEmail(profile: OauthProfile) {
+    const host =
+      profile.provider === "linkedin"
+        ? "linkedin"
+        : profile.provider === "google"
+          ? "google"
+          : "x";
+    return `${host}.${profile.providerId}@signin.postn.invalid`;
+  }
+
+  private oauthIdWhere(profile: OauthProfile) {
+    if (profile.provider === "google") return { googleId: profile.providerId };
+    if (profile.provider === "linkedin") return { linkedinId: profile.providerId };
+    return { twitterId: profile.providerId };
+  }
+
+  private oauthIds(profile: OauthProfile) {
+    return {
+      googleId: profile.provider === "google" ? profile.providerId : undefined,
+      linkedinId: profile.provider === "linkedin" ? profile.providerId : undefined,
+      twitterId: profile.provider === "twitter" ? profile.providerId : undefined,
+    };
+  }
+
+  private linkedId(
+    user: { googleId: string | null; linkedinId: string | null; twitterId: string | null },
+    provider: OauthProvider,
+  ) {
+    if (provider === "google") return user.googleId;
+    if (provider === "linkedin") return user.linkedinId;
+    return user.twitterId;
   }
 }

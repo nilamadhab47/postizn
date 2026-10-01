@@ -3,9 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { api } from "@/lib/api";
+import { toast } from "sonner";
+import { api, ApiError } from "@/lib/api";
 import { AppHeader } from "@/components/layout/app-header";
 import { mediaKind } from "@postn/shared";
+import { cancelPost, deletePost, retryPost } from "@/lib/calendar-posts";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type Target = {
   platform: string;
@@ -45,6 +48,11 @@ export function PostsBoard() {
   );
   const [items, setItems] = useState<SavedPost[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{
+    id: string;
+    kind: "cancel" | "delete";
+  } | null>(null);
 
   const query = useMemo(() => `/posts?status=${status}`, [status]);
 
@@ -59,6 +67,56 @@ export function PostsBoard() {
   function pick(next: string) {
     setStatus(next);
     router.replace(`/posts?status=${next}`);
+  }
+
+  async function runRetry(id: string) {
+    if (busyId) return;
+    setBusyId(id);
+    try {
+      const saved = await retryPost(id);
+      const data = await api<{ items: SavedPost[] }>(query);
+      setItems(data.items);
+      toast.success(
+        saved.status === "FAILED" ||
+          saved.targets.some((target) => target.status === "FAILED")
+          ? "Still failed on a channel"
+          : "Sent to the failed channel",
+      );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not retry");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function runCancel(id: string) {
+    if (busyId) return;
+    setBusyId(id);
+    try {
+      await cancelPost(id);
+      setItems((rows) => rows.filter((row) => row.id !== id));
+      setConfirm(null);
+      toast.success("Moved to drafts");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not cancel");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function runDelete(id: string) {
+    if (busyId) return;
+    setBusyId(id);
+    try {
+      await deletePost(id);
+      setItems((rows) => rows.filter((row) => row.id !== id));
+      setConfirm(null);
+      toast.success("Post deleted");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not delete");
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (
@@ -101,48 +159,114 @@ export function PostsBoard() {
         ) : (
           <ul className="grid gap-3">
             {items.map((post) => (
-              <li key={post.id}>
-                <Link
-                  href={
-                    post.status === "DRAFT"
-                      ? `/compose?post=${post.id}`
-                      : `/compose?post=${post.id}`
-                  }
-                  className="flex gap-4 rounded-2xl border border-line bg-card p-4 hover:border-accent"
-                >
-                  {post.mediaUrls[0] ? (
-                    <PostThumb
-                      url={post.media?.[0]?.url ?? post.mediaUrls[0]}
-                      mimeType={post.media?.[0]?.mimeType}
-                    />
+              <li
+                key={post.id}
+                className="flex gap-4 rounded-2xl border border-line bg-card p-4"
+              >
+                {post.mediaUrls[0] ? (
+                  <PostThumb
+                    url={post.media?.[0]?.url ?? post.mediaUrls[0]}
+                    mimeType={post.media?.[0]?.mimeType}
+                  />
+                ) : null}
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-extrabold uppercase tracking-wide text-muted">
+                    {whenCopy(post)} · {post.targets.map(platformLabel).join(" + ") || "no channel"}
+                  </p>
+                  <p className="mt-1 line-clamp-3 text-sm font-semibold">
+                    {post.content || "(image only)"}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {post.targets.map((target) => (
+                      <span
+                        key={target.platform}
+                        className="rounded-md border border-line px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted"
+                      >
+                        {platformLabel(target)} {target.status.toLowerCase()}
+                      </span>
+                    ))}
+                  </div>
+                  {post.failedReason ? (
+                    <p className="mt-1 text-xs font-semibold text-today">{post.failedReason}</p>
                   ) : null}
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-muted">
-                      {whenCopy(post)} · {post.targets.map(platformLabel).join(" + ") || "no channel"}
-                    </p>
-                    <p className="mt-1 line-clamp-3 text-sm font-semibold">
-                      {post.content || "(image only)"}
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {post.targets.map((target) => (
-                        <span
-                          key={target.platform}
-                          className="rounded-md border border-line px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted"
-                        >
-                          {platformLabel(target)} {target.status.toLowerCase()}
-                        </span>
-                      ))}
-                    </div>
-                    {post.failedReason ? (
-                      <p className="mt-1 text-xs font-semibold text-today">{post.failedReason}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {(post.status === "FAILED" ||
+                      post.targets.some((target) => target.status === "FAILED")) &&
+                    post.status !== "PUBLISHING" ? (
+                      <button
+                        type="button"
+                        disabled={busyId === post.id}
+                        onClick={() => void runRetry(post.id)}
+                        className="rounded-lg bg-today px-2.5 py-1 text-xs font-bold text-white disabled:opacity-40"
+                      >
+                        {busyId === post.id ? "Retrying…" : "Retry"}
+                      </button>
+                    ) : null}
+                    <Link
+                      href={`/compose?post=${post.id}`}
+                      className="rounded-lg bg-accent px-2.5 py-1 text-xs font-bold text-accent-fg"
+                    >
+                      {post.status === "PUBLISHED" &&
+                      !post.targets.some((target) => target.status === "FAILED")
+                        ? "Duplicate"
+                        : "Edit"}
+                    </Link>
+                    {post.status === "SCHEDULED" ? (
+                      <button
+                        type="button"
+                        disabled={busyId === post.id}
+                        onClick={() => setConfirm({ id: post.id, kind: "cancel" })}
+                        className="rounded-lg border border-line px-2.5 py-1 text-xs font-semibold disabled:opacity-40"
+                      >
+                        Cancel
+                      </button>
+                    ) : null}
+                    {post.status !== "PUBLISHING" ? (
+                      <button
+                        type="button"
+                        disabled={busyId === post.id}
+                        onClick={() => setConfirm({ id: post.id, kind: "delete" })}
+                        className="rounded-lg border border-line px-2.5 py-1 text-xs font-semibold text-today disabled:opacity-40"
+                      >
+                        Delete
+                      </button>
                     ) : null}
                   </div>
-                </Link>
+                </div>
               </li>
             ))}
           </ul>
         )}
       </div>
+      <ConfirmDialog
+        open={confirm?.kind === "cancel"}
+        onOpenChange={(open) => {
+          if (!open) setConfirm(null);
+        }}
+        title="Move to drafts?"
+        description="This post leaves the queue. You can schedule it again from Compose."
+        confirmLabel="Move to drafts"
+        cancelLabel="Keep queued"
+        busy={Boolean(confirm && busyId === confirm.id)}
+        onConfirm={() => {
+          if (confirm) void runCancel(confirm.id);
+        }}
+      />
+      <ConfirmDialog
+        open={confirm?.kind === "delete"}
+        onOpenChange={(open) => {
+          if (!open) setConfirm(null);
+        }}
+        title="Delete this post?"
+        description="This cannot be undone. It will be removed from postN."
+        confirmLabel="Delete post"
+        cancelLabel="Keep post"
+        tone="danger"
+        busy={Boolean(confirm && busyId === confirm.id)}
+        onConfirm={() => {
+          if (confirm) void runDelete(confirm.id);
+        }}
+      />
     </div>
   );
 }

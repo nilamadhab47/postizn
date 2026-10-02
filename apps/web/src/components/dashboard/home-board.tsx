@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
+import { PayLink } from "@/components/billing/pay-link";
+import { usePaywall } from "@/lib/use-paywall";
 import { ApiError } from "@/lib/api";
 import {
   fetchQueuePosts,
@@ -25,6 +27,7 @@ import { SetupHome } from "@/components/dashboard/setup-home";
 
 export function HomeBoard() {
   const { user, refresh } = useAuth();
+  const { lapsed, block } = usePaywall();
   const now = useMemo(() => istWallClock(), []);
   const today = startOfDay(now);
   const [posts, setPosts] = useState<CalPost[]>([]);
@@ -48,6 +51,7 @@ export function HomeBoard() {
 
   async function retryFailed(post: CalPost) {
     if (retrying) return;
+    if (block()) return;
     setRetrying(true);
     try {
       const saved = await retryPost(post.id);
@@ -78,7 +82,7 @@ export function HomeBoard() {
   const channels = setup?.channels ?? 0;
   const postCount = setup?.posts ?? posts.length;
   const needsSetup =
-    setup != null && (setup.channels === 0 || setup.posts === 0);
+    !lapsed && setup != null && (setup.channels === 0 || setup.posts === 0);
   const headerHref = channels === 0 ? "/accounts?from=start" : "/compose";
   const headerLabel =
     channels === 0 ? "Connect a channel" : postCount === 0 ? "Write first post" : "New post";
@@ -111,12 +115,12 @@ export function HomeBoard() {
           >
             Calendar
           </Link>
-          <Link
+          <PayLink
             href={headerHref}
             className="rounded-xl bg-accent px-4 py-2 text-sm font-bold text-accent-fg"
           >
             {headerLabel}
-          </Link>
+          </PayLink>
         </div>
       </header>
 
@@ -279,12 +283,12 @@ export function HomeBoard() {
               <p className="mt-1 text-sm text-muted">
                 Post now or schedule, and it lands here.
               </p>
-              <Link
+              <PayLink
                 href="/compose"
                 className="mt-4 inline-block rounded-xl bg-accent px-4 py-2 text-sm font-bold text-accent-fg"
               >
                 Open compose
-              </Link>
+              </PayLink>
             </div>
           )}
         </section>

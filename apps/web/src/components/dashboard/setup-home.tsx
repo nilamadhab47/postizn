@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { ChannelIcon } from "@/components/accounts/channel-icons";
+import { PayLink } from "@/components/billing/pay-link";
 
 const PREVIEW_CHANNELS = [
   { slug: "linkedin", label: "LinkedIn" },
@@ -120,7 +120,7 @@ function Step({
           After you connect
         </p>
       ) : (
-        <Link
+        <PayLink
           href={href}
           className={`mt-4 inline-flex w-fit rounded-xl px-3 py-2 text-sm font-bold ${
             current
@@ -129,7 +129,7 @@ function Step({
           }`}
         >
           {cta}
-        </Link>
+        </PayLink>
       )}
     </li>
   );

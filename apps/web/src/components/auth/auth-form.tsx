@@ -49,6 +49,13 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           isRegister ? { name, email, password } : { email, password },
         ),
       });
+      if (isRegister) {
+        try {
+          sessionStorage.setItem("postn:fresh-account", "1");
+        } catch {
+          /* ignore */
+        }
+      }
       router.replace("/dashboard");
       router.refresh();
     } catch (err) {

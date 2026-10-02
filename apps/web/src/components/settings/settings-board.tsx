@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { AppHeader } from "@/components/layout/app-header";
 import { channelLabel, formatIst } from "@/lib/platforms";
+import { PayLink } from "@/components/billing/pay-link";
 import { BillingPanel } from "@/components/settings/billing-panel";
 import { UserAvatar } from "@/components/layout/user-avatar";
 
@@ -169,12 +170,12 @@ function QueuePanel() {
             <p className="mt-2 text-base text-muted">
               Schedule from Compose and the worker picks it up at the IST time you set.
             </p>
-            <Link
+            <PayLink
               href="/compose"
               className="mt-5 inline-block rounded-xl bg-accent px-4 py-2 text-sm font-bold text-accent-fg"
             >
               Open compose
-            </Link>
+            </PayLink>
           </div>
         ) : (
           <ul className="grid gap-3">

@@ -14,7 +14,7 @@ export const FAQS: { q: string; a: string }[] = [
   },
   {
     q: "Is it really free to start?",
-    a: `Yes for ${TRIAL_DAYS} days, no card — LinkedIn and X only. After that you add a card for Pro at ${inr(PRO_LAUNCH_MONTHLY_INR)}/month launch (${inr(PRO_LIST_MONTHLY_INR)} list) or ${inr(PRO_YEARLY_INR)}/year. Studio is ${inr(STUDIO_MONTHLY_INR)}/month when you need more generation and AI video. There is no forever Free plan. GST extra later. Checkout is next.`,
+    a: `Yes for ${TRIAL_DAYS} days, no card — LinkedIn and X only. After that you add a card for Pro at ${inr(PRO_LAUNCH_MONTHLY_INR)}/month launch (${inr(PRO_LIST_MONTHLY_INR)} list) or ${inr(PRO_YEARLY_INR)}/year. Studio is ${inr(STUDIO_MONTHLY_INR)}/month when you need more generation and AI video. There is no forever Free plan. GST extra later. postN never sees the card — Razorpay Subscriptions Checkout renews monthly or yearly. Card, not UPI.`,
   },
   {
     q: "What about timezones?",

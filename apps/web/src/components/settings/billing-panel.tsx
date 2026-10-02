@@ -5,7 +5,9 @@ import { useSearchParams } from "next/navigation";
 import { CONTACT_EMAIL } from "@/lib/site";
 import { api, ApiError, type AccessId } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { inr } from "@/lib/pricing";
+import { CHECKOUT_TRUST, inr } from "@/lib/pricing";
+import { loadRazorpayCheckout, openRazorpayModal } from "@/lib/razorpay-checkout";
+import { PLAN_WELCOME_EVENT } from "@/lib/onboarding";
 import { rupeesFromPaise, type BillingInterval, type PaidPlanId } from "@postn/shared";
 
 type Sku = { amountPaise: number; listPaise: number };
@@ -53,7 +55,7 @@ export function BillingPanel({ access }: { access: AccessId }) {
 
   useEffect(() => {
     if (billingFlag === "return") {
-      setMessage("Payment is confirming with the provider. This page updates when the webhook lands — not from the success URL.");
+      setMessage("If you already paid, this page updates after verification — not from the URL alone.");
       void refresh();
     } else if (billingFlag === "canceled") {
       setMessage("Checkout was closed. Nothing was charged.");
@@ -64,15 +66,59 @@ export function BillingPanel({ access }: { access: AccessId }) {
     setBusy(plan);
     setMessage(null);
     try {
-      const session = await api<{ url: string }>("/billing/checkout", {
+      const session = await api<{
+        url: string | null;
+        keyId: string | null;
+        orderId: string | null;
+        subscriptionId: string | null;
+        amount: number;
+        currency: string;
+        plan: PaidPlanId;
+        interval: BillingInterval;
+      }>("/billing/checkout", {
         method: "POST",
         body: JSON.stringify({ plan, interval: cycle }),
       });
+      const keyId = session.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "";
+      if ((session.subscriptionId || session.orderId) && keyId) {
+        await loadRazorpayCheckout();
+        const result = await openRazorpayModal({
+          keyId,
+          orderId: session.orderId ?? undefined,
+          subscriptionId: session.subscriptionId ?? undefined,
+          amount: session.amount,
+          currency: session.currency,
+          name: "postN",
+          description: `${plan === "STUDIO" ? "Studio" : "Pro"} · ${cycle}`,
+          email: user?.email,
+          contactName: user?.name,
+        });
+        if (result.status === "dismissed") {
+          setMessage("Checkout was closed. Nothing was charged.");
+          return;
+        }
+        if (result.status === "failed") {
+          setMessage(result.message);
+          return;
+        }
+        await api("/billing/verify", {
+          method: "POST",
+          body: JSON.stringify(result.payload),
+        });
+        await refresh();
+        const me = await api<BillingMe>("/billing/me");
+        setInfo(me);
+        setMessage(`${plan === "STUDIO" ? "Studio" : "Pro"} is on.`);
+        window.dispatchEvent(
+          new CustomEvent(PLAN_WELCOME_EVENT, { detail: { plan } }),
+        );
+        return;
+      }
       if (session.url) {
         window.location.href = session.url;
         return;
       }
-      setMessage("Checkout did not return a URL.");
+      setMessage("Checkout did not return a subscription.");
     } catch (err) {
       setMessage(err instanceof ApiError ? err.message : "Could not start checkout.");
     } finally {
@@ -93,7 +139,7 @@ export function BillingPanel({ access }: { access: AccessId }) {
         </p>
       ) : access === "FREE" ? (
         <p className="mt-3 max-w-lg text-sm font-semibold text-accent">
-          Trial ended. Extra channels stay paused until Pro.
+          Trial ended. LinkedIn, X, and every other channel wait on Pro. Pay to use.
         </p>
       ) : null}
 
@@ -116,12 +162,16 @@ export function BillingPanel({ access }: { access: AccessId }) {
         <PlanCard
           name={access === "FREE" ? "Trial ended" : "Trial"}
           current={access === "TRIAL"}
-          points={[
-            "LinkedIn + X · 2 channels",
-            `${entitlements?.postsTodayRemaining ?? 0} of ${entitlements?.postsPerDay ?? 2} posts left today`,
-            `${entitlements?.postsRemaining ?? 0} of ${entitlements?.postsPerMonth ?? 20} posts this window`,
-            `${entitlements?.imageRemaining ?? 0} of ${entitlements?.imageCap ?? 3} images · ${entitlements?.aiRemaining ?? 0} of ${entitlements?.aiCap ?? 8} AI writes`,
-          ]}
+          points={
+            access === "FREE"
+              ? ["Paused until you pay", "LinkedIn, X, and the grid wait on Pro"]
+              : [
+                  "LinkedIn + X · 2 channels",
+                  `${entitlements?.postsTodayRemaining ?? 0} of ${entitlements?.postsPerDay ?? 2} posts left today`,
+                  `${entitlements?.postsRemaining ?? 0} of ${entitlements?.postsPerMonth ?? 20} posts this window`,
+                  `${entitlements?.imageRemaining ?? 0} of ${entitlements?.imageCap ?? 3} images · ${entitlements?.aiRemaining ?? 0} of ${entitlements?.aiCap ?? 8} AI writes`,
+                ]
+          }
         />
         <PlanCard
           name="Pro"
@@ -170,11 +220,9 @@ export function BillingPanel({ access }: { access: AccessId }) {
         </p>
       ) : (
         <p className="mt-4 max-w-lg text-sm text-muted">
-          postN never sees the card. Checkout opens the attached provider
-          {info?.provider && info.provider !== "none" ? ` (${info.provider})` : ""}
-          . Paid access is granted only after the signed webhook, not the return URL.
+          {CHECKOUT_TRUST}
           {info && !info.attached
-            ? " Adapter not attached yet — the button is wired for tomorrow."
+            ? " Checkout is not attached on this API yet."
             : ""}
         </p>
       )}

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Check } from "lucide-react";
 import { CONTACT_EMAIL } from "@/lib/site";
-import { PLANS, type BillingCycle } from "@/lib/pricing";
+import { CHECKOUT_TRUST, PLANS, type BillingCycle } from "@/lib/pricing";
 import { GlowCard, Reveal } from "./motion-bits";
 
 export function Pricing({ waitlistMode }: { waitlistMode: boolean }) {
@@ -121,6 +121,9 @@ export function Pricing({ waitlistMode }: { waitlistMode: boolean }) {
           );
         })}
       </div>
+      <p className="mx-auto mt-10 max-w-xl text-center text-sm text-muted">
+        {CHECKOUT_TRUST}
+      </p>
     </section>
   );
 }

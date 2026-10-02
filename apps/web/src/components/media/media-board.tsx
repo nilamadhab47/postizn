@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { api, ApiError } from "@/lib/api";
 import { AppHeader } from "@/components/layout/app-header";
+import { usePaywall } from "@/lib/use-paywall";
 import { mediaKind } from "@postn/shared";
 import {
   MEDIA_FILE_ACCEPT,
@@ -26,6 +27,7 @@ function formatBytes(bytes: number) {
 }
 
 export function MediaBoard() {
+  const { block } = usePaywall();
   const [items, setItems] = useState<MediaItem[]>([]);
   const [configured, setConfigured] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -46,6 +48,7 @@ export function MediaBoard() {
   }, []);
 
   async function onPickFiles(files: File[]) {
+    if (block()) return;
     const incoming = acceptedFiles(files);
     if (!incoming.length) {
       setError("Use a JPEG, PNG, WebP, GIF, or MP4");

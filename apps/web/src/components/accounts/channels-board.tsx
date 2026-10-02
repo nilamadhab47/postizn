@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ChannelIcon, HelpIcon } from "@/components/accounts/channel-icons";
+import { PayLink } from "@/components/billing/pay-link";
 import { AppHeader } from "@/components/layout/app-header";
 import { API_URL, api, ApiError } from "@/lib/api";
 import { CHANNEL_GUIDES } from "@/lib/channel-guides";
 import { useAuth } from "@/lib/auth";
+import { usePaywall } from "@/lib/use-paywall";
 
 type ChannelAccount = {
   id: string;
@@ -64,6 +65,7 @@ const STATUS_COPY: Record<string, string> = {
 export function ChannelsBoard() {
   const search = useSearchParams();
   const { user, refresh } = useAuth();
+  const { lapsed, block } = usePaywall();
   const fromStart = search.get("from") === "start";
   const oauthStatus = search.get("status");
   const [catalog, setCatalog] = useState<Catalog | null>(null);
@@ -117,6 +119,7 @@ export function ChannelsBoard() {
   }
 
   async function sendTest(id: string) {
+    if (block()) return;
     setBusyId(`test:${id}`);
     try {
       await api(`/social/accounts/${id}/test`, {
@@ -133,6 +136,7 @@ export function ChannelsBoard() {
 
   async function submitToken() {
     if (!form) return;
+    if (block()) return;
     setSaving(true);
     setFormError(null);
     try {
@@ -206,23 +210,23 @@ export function ChannelsBoard() {
                 Channel is on. Write the first post — one draft, every feed.
               </p>
             </div>
-            <Link
+            <PayLink
               href="/compose"
               className="shrink-0 rounded-xl bg-accent px-3 py-2 text-sm font-bold text-accent-fg"
             >
               Open compose
-            </Link>
+            </PayLink>
           </div>
         ) : null}
         <p className="max-w-2xl text-sm text-muted">
-          LinkedIn and X are on trial. LinkedIn Page, Telegram, Slack, Discord, and
-          Dev.to unlock on Pro. Medium no longer issues API tokens, so it
-          stays in Unavailable. The rest of the grid is the roadmap.
+          {lapsed
+            ? "Trial ended. LinkedIn, X, and every other channel wait on Pro. You can look around; posting and connect say pay to use."
+            : "LinkedIn and X are on trial. LinkedIn Page, Telegram, Slack, Discord, and Dev.to unlock on Pro. Medium no longer issues API tokens, so it stays in Unavailable. The rest of the grid is the roadmap."}
         </p>
         {catalog ? (
           <p className="mt-3 text-xs uppercase tracking-wide text-muted">
             {catalog.plan} · {catalog.used} / {catalog.limit} sending
-            {catalog.plan === "FREE" ? " · extra channels stay connected, paused until Pro" : ""}
+            {catalog.plan === "FREE" ? " · trial ended · pay to use" : ""}
             {catalog.plan === "TRIAL" ? " · trial · LinkedIn and X" : ""}
           </p>
         ) : null}
@@ -291,7 +295,9 @@ export function ChannelsBoard() {
                         provider={provider}
                         connected={connected}
                         connectBlocked={connectBlocked}
-                        locked={provider.locked}
+                        locked={provider.locked || lapsed}
+                        paywalled={lapsed}
+                        onPaywall={block}
                         busyId={busyId}
                         onDisconnect={disconnect}
                         onTest={sendTest}
@@ -397,6 +403,8 @@ function ChannelActions({
   connected,
   connectBlocked,
   locked,
+  paywalled,
+  onPaywall,
   busyId,
   onDisconnect,
   onTest,
@@ -406,6 +414,8 @@ function ChannelActions({
   connected: boolean;
   connectBlocked: boolean;
   locked: boolean;
+  paywalled?: boolean;
+  onPaywall?: () => boolean;
   busyId: string | null;
   onDisconnect: (id: string) => void;
   onTest: (id: string) => void;
@@ -431,19 +441,35 @@ function ChannelActions({
     return (
       <div className="flex shrink-0 flex-col items-end gap-2">
         {provider.connectMode === "oauth" ? (
+          paywalled ? (
+            <button
+              type="button"
+              onClick={() => onPaywall?.()}
+              className="rounded-md border border-line px-3 py-1.5 text-sm text-muted hover:text-foreground"
+            >
+              Pay to use
+            </button>
+          ) : (
           <a
             href={`${API_URL}/social/connect/${provider.slug}`}
             className="rounded-md border border-line px-3 py-1.5 text-sm text-muted hover:text-foreground"
           >
             Reconnect
           </a>
+          )
         ) : (
           <button
             type="button"
-            onClick={onToken}
+            onClick={() => {
+              if (paywalled) {
+                onPaywall?.();
+                return;
+              }
+              onToken();
+            }}
             className="rounded-md border border-line px-3 py-1.5 text-sm text-muted hover:text-foreground"
           >
-            Reconnect
+            {paywalled ? "Pay to use" : "Reconnect"}
           </button>
         )}
         {!provider.account.isMock && !provider.account.pausedByPlan ? (
@@ -470,12 +496,13 @@ function ChannelActions({
 
   if (locked) {
     return (
-      <Link
-        href="/settings#plan"
+      <button
+        type="button"
+        onClick={() => onPaywall?.()}
         className="shrink-0 rounded-md border border-line px-3 py-1.5 text-sm text-muted hover:text-foreground"
       >
-        PRO
-      </Link>
+        Pay to use
+      </button>
     );
   }
 
@@ -500,12 +527,22 @@ function ChannelActions({
   }
 
   return (
+    paywalled ? (
+      <button
+        type="button"
+        onClick={() => onPaywall?.()}
+        className="shrink-0 rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background"
+      >
+        Pay to use
+      </button>
+    ) : (
     <a
       href={`${API_URL}/social/connect/${provider.slug}`}
       className="shrink-0 rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background"
     >
       Connect
     </a>
+    )
   );
 }
 

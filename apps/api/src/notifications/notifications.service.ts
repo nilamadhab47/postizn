@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { NotificationKind } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { MailService } from "../mail/mail.service";
 
 export type PublishNoticeInput = {
   userId: string;
@@ -14,7 +15,10 @@ export type PublishNoticeInput = {
 export class NotificationsService {
   private readonly log = new Logger(NotificationsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mail: MailService,
+  ) {}
 
   async list(userId: string) {
     const items = await this.prisma.notification.findMany({
@@ -64,6 +68,7 @@ export class NotificationsService {
       const existing = await this.prisma.notification.findUnique({
         where: { postId: input.postId },
       });
+      const kindChanged = Boolean(existing && existing.kind !== kind);
       if (existing) {
         await this.prisma.notification.update({
           where: { id: existing.id },
@@ -74,6 +79,7 @@ export class NotificationsService {
             readAt: existing.kind === kind ? existing.readAt : null,
           },
         });
+        if (kindChanged) await this.mailPublish(input);
         return;
       }
       await this.prisma.notification.create({
@@ -85,10 +91,27 @@ export class NotificationsService {
           body,
         },
       });
+      await this.mailPublish(input);
     } catch (err) {
       const message = err instanceof Error ? err.message : "notice failed";
       this.log.warn(`could not record notice for ${input.postId}: ${message}`);
     }
+  }
+
+  private async mailPublish(input: PublishNoticeInput) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: input.userId },
+      select: { email: true, name: true },
+    });
+    if (!user) return;
+    this.mail.publishOutcome({
+      email: user.email,
+      name: user.name,
+      postId: input.postId,
+      snippet: input.snippet,
+      published: input.published,
+      failed: input.failed,
+    });
   }
 }
 

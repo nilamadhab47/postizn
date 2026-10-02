@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { api, ApiError, type Me } from "@/lib/api";
+import { usePaywall } from "@/lib/use-paywall";
+import { PAY_TO_USE } from "@/lib/paywall";
 import { ChannelIcon } from "@/components/accounts/channel-icons";
 import {
   PLATFORM_LIMITS,
@@ -59,7 +61,9 @@ function quotaLine(user: Me | null, imageLeft: number | null, aiLeft: number | n
   const days =
     access === "TRIAL" && e?.trialDaysRemaining != null
       ? ` · ${e.trialDaysRemaining}d trial`
-      : "";
+      : access === "FREE"
+        ? " · pay to use"
+        : "";
   const postsToday = e?.postsTodayRemaining;
   const postsMonth = e?.postsRemaining;
   const posts =
@@ -114,6 +118,7 @@ export function ComposeBoard({
   initialPostId?: string;
 }) {
   const { user, refresh } = useAuth();
+  const { lapsed, block } = usePaywall();
   const router = useRouter();
   const area = useRef<HTMLTextAreaElement>(null);
   const pending = useRef(false);
@@ -277,6 +282,7 @@ export function ComposeBoard({
   }
 
   async function runVariations() {
+    if (block()) return;
     if (aiCapped) {
       setBanner({
         kind: "err",
@@ -313,6 +319,7 @@ export function ComposeBoard({
   }
 
   async function runSuggest(kind: string) {
+    if (block()) return;
     setBusy(kind);
     setBanner(null);
     try {
@@ -339,6 +346,7 @@ export function ComposeBoard({
 
   function requestImage() {
     if (pending.current || busy) return;
+    if (block()) return;
     if (imageCapped) {
       setBanner({
         kind: "err",
@@ -352,6 +360,7 @@ export function ComposeBoard({
   }
 
   async function runImage() {
+    if (block()) return;
     const idea = imagePrompt.trim();
     if (!idea) {
       setImageError("Describe the image you want.");
@@ -431,6 +440,7 @@ export function ComposeBoard({
   }
 
   async function onPickFiles(files: File[]) {
+    if (block()) return;
     const incoming = acceptedFiles(files);
     if (!incoming.length) {
       setBanner({
@@ -482,6 +492,7 @@ export function ComposeBoard({
   }
 
   function toggle(platform: string) {
+    if (block()) return;
     if (pinnedPlatforms[platform]) return;
     setSelected((prev) => {
       const next = { ...prev, [platform]: !prev[platform] };
@@ -491,6 +502,7 @@ export function ComposeBoard({
   }
 
   async function submit(action: "draft" | "schedule" | "now") {
+    if (block()) return;
     if (pending.current || busy) return;
     const rows = selectedRows.filter((row) => liveAccount(row));
     const pausedRows = selectedRows.filter((row) => row.account?.pausedByPlan);
@@ -566,6 +578,7 @@ export function ComposeBoard({
   }
 
   function requestPostNow() {
+    if (block()) return;
     if (pending.current || busy) return;
     const rows = selectedRows.filter((row) => liveAccount(row));
     const pausedRows = selectedRows.filter((row) => row.account?.pausedByPlan);
@@ -664,7 +677,25 @@ export function ComposeBoard({
               </p>
             </div>
           ) : null}
-          {noAccounts ? (
+          {lapsed ? (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
+              <div>
+                <p className="text-[11px] font-extrabold uppercase tracking-wide text-accent">
+                  Trial ended
+                </p>
+                <p className="mt-0.5 text-sm font-semibold">
+                  {PAY_TO_USE} LinkedIn, X, and the rest of the grid wait on Pro.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => block()}
+                className="shrink-0 rounded-xl bg-accent px-3 py-2 text-sm font-bold text-accent-fg"
+              >
+                See Pro
+              </button>
+            </div>
+          ) : noAccounts ? (
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
               <div>
                 <p className="text-[11px] font-extrabold uppercase tracking-wide text-accent">
@@ -755,7 +786,10 @@ export function ComposeBoard({
               </label>
               <button
                 type="button"
-                onClick={() => setLibraryOpen(true)}
+                onClick={() => {
+                  if (block()) return;
+                  setLibraryOpen(true);
+                }}
                 disabled={Boolean(busy)}
                 className="rounded-lg px-2 py-1 text-sm font-semibold hover:bg-background disabled:opacity-40"
               >

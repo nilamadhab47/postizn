@@ -3,24 +3,24 @@ export type PlanId = "FREE" | "PRO" | "STUDIO";
 
 export const TRIAL_DAYS = 14;
 
-export const FREE_CHANNEL_LIMIT = 2;
+export const FREE_CHANNEL_LIMIT = 0;
 export const TRIAL_CHANNEL_LIMIT = 2;
 export const PRO_CHANNEL_LIMIT = 10;
 export const EXEMPT_CHANNEL_LIMIT = 20;
 
-export const FREE_POSTS_PER_DAY = 2;
+export const FREE_POSTS_PER_DAY = 0;
 export const TRIAL_POSTS_PER_DAY = 2;
 export const PRO_POSTS_PER_DAY = 8;
 
-export const FREE_POSTS_PER_MONTH = 20;
+export const FREE_POSTS_PER_MONTH = 0;
 export const TRIAL_POSTS_CAP = 20;
 export const PRO_POSTS_PER_MONTH = 150;
 
-export const FREE_IMAGE_CAP = 3;
+export const FREE_IMAGE_CAP = 0;
 export const TRIAL_IMAGE_CAP = 3;
 export const PRO_IMAGE_CAP = 20;
 
-export const FREE_AI_CAP = 8;
+export const FREE_AI_CAP = 0;
 export const TRIAL_AI_CAP = 8;
 export const PRO_AI_CAP = 40;
 
@@ -32,6 +32,9 @@ export const STUDIO_AI_CAP = 150;
 
 export const AI_RATE_PER_MINUTE = 10;
 export const AI_RATE_PER_HOUR = 60;
+
+/** Lapsed trial — browse the app, pay to post / connect / generate. */
+export const PAY_TO_USE = "Trial ended. Pay to use.";
 
 export const FREE_CHANNEL_LABELS = ["LinkedIn", "X"] as const;
 export const PRO_CHANNEL_LABELS = [

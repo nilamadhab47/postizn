@@ -29,6 +29,21 @@ export class BillingController {
     return this.billing.createCheckout(user.userId, body.plan ?? "", body.interval ?? "");
   }
 
+  @Post("verify")
+  @UseGuards(JwtAuthGuard)
+  verify(
+    @CurrentUser() user: JwtUser,
+    @Body()
+    body: {
+      razorpay_order_id?: string;
+      razorpay_subscription_id?: string;
+      razorpay_payment_id?: string;
+      razorpay_signature?: string;
+    },
+  ) {
+    return this.billing.verifyPayment(user.userId, body);
+  }
+
   /** Provider-facing. Signature check lives in the PaymentProvider adapter. */
   @Post("webhook")
   @HttpCode(200)

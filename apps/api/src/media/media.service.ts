@@ -13,6 +13,7 @@ import {
 } from "@postn/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
+import { EntitlementsService } from "../plan/entitlements.service";
 
 const EXT: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -29,6 +30,7 @@ export class MediaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   status() {
@@ -109,6 +111,7 @@ export class MediaService {
     originalName: string,
     bytes: number,
   ) {
+    await this.entitlements.assertWritable(userId);
     if (!this.storage.isConfigured()) {
       throw new BadRequestException("R2 is not configured. Add account id, bucket, and keys, then restart the API.");
     }

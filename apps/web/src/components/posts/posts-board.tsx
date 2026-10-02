@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { AppHeader } from "@/components/layout/app-header";
 import { mediaKind } from "@postn/shared";
 import { cancelPost, deletePost, retryPost } from "@/lib/calendar-posts";
+import { PayLink } from "@/components/billing/pay-link";
+import { usePaywall } from "@/lib/use-paywall";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type Target = {
@@ -41,6 +42,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 export function PostsBoard() {
   const router = useRouter();
+  const { block } = usePaywall();
   const search = useSearchParams();
   const initial = (search.get("status") ?? "DRAFT").toUpperCase();
   const [status, setStatus] = useState(
@@ -71,6 +73,7 @@ export function PostsBoard() {
 
   async function runRetry(id: string) {
     if (busyId) return;
+    if (block()) return;
     setBusyId(id);
     try {
       const saved = await retryPost(id);
@@ -149,12 +152,12 @@ export function PostsBoard() {
                 ? "Save draft from Compose and it lands here."
                 : "Compose a post, then schedule or publish it."}
             </p>
-            <Link
+            <PayLink
               href="/compose"
               className="mt-5 inline-block rounded-xl bg-accent px-4 py-2 text-sm font-bold text-accent-fg"
             >
               Open compose
-            </Link>
+            </PayLink>
           </div>
         ) : (
           <ul className="grid gap-3">
@@ -202,7 +205,7 @@ export function PostsBoard() {
                         {busyId === post.id ? "Retrying…" : "Retry"}
                       </button>
                     ) : null}
-                    <Link
+                    <PayLink
                       href={`/compose?post=${post.id}`}
                       className="rounded-lg bg-accent px-2.5 py-1 text-xs font-bold text-accent-fg"
                     >
@@ -210,7 +213,7 @@ export function PostsBoard() {
                       !post.targets.some((target) => target.status === "FAILED")
                         ? "Duplicate"
                         : "Edit"}
-                    </Link>
+                    </PayLink>
                     {post.status === "SCHEDULED" ? (
                       <button
                         type="button"

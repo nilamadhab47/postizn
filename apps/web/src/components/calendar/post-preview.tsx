@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import Link from "next/link";
 import { toast } from "sonner";
+import { PayLink } from "@/components/billing/pay-link";
+import { PAY_TO_USE } from "@/lib/paywall";
+import { usePaywall } from "@/lib/use-paywall";
 import { composeHref, hourLabel } from "@/lib/calendar";
 import {
   cancelPost,
@@ -73,17 +75,26 @@ export function PostCard({
   onMoveEnd?: () => void;
 }) {
   const skipClick = useRef(false);
+  const { lapsed, block } = usePaywall();
+  const movable = post.canMove && !lapsed;
 
   return (
     <button
       type="button"
-      draggable={post.canMove}
+      draggable={movable}
       title={
-        post.canMove
+        movable
           ? "Drag to another day or hour to reschedule"
-          : undefined
+          : lapsed
+            ? PAY_TO_USE
+            : undefined
       }
       onDragStart={(event) => {
+        if (lapsed) {
+          event.preventDefault();
+          block();
+          return;
+        }
         if (!post.canMove) {
           event.preventDefault();
           return;
@@ -106,7 +117,7 @@ export function PostCard({
         onOpen(post);
       }}
       className={`flex h-full min-h-0 w-full overflow-hidden rounded-xl text-left shadow-[0_8px_18px_-12px_rgba(0,0,0,0.7)] ${TONE[post.status]} ${
-        post.canMove ? "cursor-grab active:cursor-grabbing" : ""
+        movable ? "cursor-grab active:cursor-grabbing" : ""
       } ${dimmed ? "opacity-40" : ""}`}
     >
       <i className={`w-1.5 shrink-0 ${BAR[post.status]}`} />
@@ -274,12 +285,12 @@ export function DaySheet({
           <p className="text-xs font-semibold text-muted">
             Same hour stacks in week view. Open a chip for the full post.
           </p>
-          <Link
+          <PayLink
             href={composeHref(day, 10)}
             className="rounded-xl bg-accent px-3 py-2 text-sm font-bold text-accent-fg"
           >
             New on this day
-          </Link>
+          </PayLink>
         </footer>
       </div>
     </Overlay>
@@ -321,9 +332,11 @@ export function PostModal({
     month: "short",
   });
   const locked = Boolean(busy);
+  const { block } = usePaywall();
 
   async function runRetry() {
     if (locked) return;
+    if (block()) return;
     setBusy("retry");
     try {
       const saved = await retryPost(post.id);
@@ -541,14 +554,14 @@ export function PostModal({
                 {busy === "retry" ? "Retrying…" : "Retry"}
               </button>
             ) : null}
-            <Link
+            <PayLink
               href={`/compose?post=${post.id}`}
               className="rounded-xl bg-accent px-3 py-2 text-sm font-bold text-accent-fg"
             >
               {post.status === "published" && !post.canRetry
                 ? "Duplicate"
                 : "Edit"}
-            </Link>
+            </PayLink>
             {post.canCancel ? (
               <button
                 type="button"

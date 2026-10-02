@@ -18,6 +18,10 @@ export function inr(n: number) {
   return `₹${n.toLocaleString("en-IN")}`;
 }
 
+/** Customer-facing. Grant still only happens after HMAC verify (and webhook if set); the return URL never unlocks a plan. */
+export const CHECKOUT_TRUST =
+  "postN never sees your card. Upgrade opens Razorpay Subscriptions — monthly and yearly renew on their own. Card works; UPI usually doesn’t.";
+
 export type BillingCycle = "monthly" | "yearly";
 
 export type PublicPlan = {

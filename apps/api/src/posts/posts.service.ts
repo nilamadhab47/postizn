@@ -22,6 +22,7 @@ import { MediaService } from "../media/media.service";
 import { PublishQueue } from "../queue/publish.queue";
 import { NotificationsService } from "../notifications/notifications.service";
 import { EntitlementsService } from "../plan/entitlements.service";
+import { PAY_TO_USE } from "../plan/entitlements";
 import { channelLabel } from "./channel-label";
 import { publicPublishError } from "./publish-error";
 
@@ -63,6 +64,7 @@ export class PostsService {
   ) {}
 
   async create(userId: string, input: CreatePostInput) {
+    await this.entitlements.assertWritable(userId);
     const action = this.parseAction(input.action);
     const content = (input.content ?? "").trim();
     const platforms = this.parsePlatforms(input.platforms);
@@ -165,6 +167,7 @@ export class PostsService {
   }
 
   async reschedule(userId: string, id: string, raw?: string) {
+    await this.entitlements.assertWritable(userId);
     const post = await this.prisma.post.findFirst({
       where: { id, userId },
     });
@@ -219,6 +222,7 @@ export class PostsService {
       return this.reschedule(userId, id, input.scheduledAt ?? undefined);
     }
 
+    await this.entitlements.assertWritable(userId);
     const existing = await this.prisma.post.findFirst({
       where: { id, userId },
       include: { targets: { include: { socialAccount: true } } },
@@ -405,6 +409,7 @@ export class PostsService {
   }
 
   async retry(userId: string, id: string, platform?: string) {
+    await this.entitlements.assertWritable(userId);
     const post = await this.prisma.post.findFirst({
       where: { id, userId },
       include: { targets: { include: { socialAccount: true } } },
@@ -659,11 +664,7 @@ export class PostsService {
     });
     const paused = accounts.filter((row) => row.pausedByPlan);
     if (paused.length) {
-      throw new ForbiddenException(
-        `${paused.map((row) => channelLabel(row.platform)).join(", ")} ${
-          paused.length === 1 ? "is" : "are"
-        } paused until Pro. Upgrade to send.`,
-      );
+      throw new ForbiddenException(PAY_TO_USE);
     }
     const byPlatform = new Map(accounts.map((row) => [row.platform, row]));
     const missing = platforms.filter((platform) => !byPlatform.has(platform));

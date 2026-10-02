@@ -8,10 +8,12 @@ import {
 } from "@nestjs/common";
 import { Platform, type User } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { MailService } from "../mail/mail.service";
 import {
   AI_RATE_PER_HOUR,
   AI_RATE_PER_MINUTE,
-  FREE_CHANNEL_LIMIT,
+  PAY_TO_USE,
+  TRIAL_CHANNEL_LIMIT,
   capsFor,
   entitlements as catalogEntitlements,
   type AccessId,
@@ -57,16 +59,21 @@ const USABLE = { isActive: true, pausedByPlan: false } as const;
 export class EntitlementsService {
   private readonly aiHits = new Map<string, number[]>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mail: MailService,
+  ) {}
 
   async resolve(userId: string): Promise<AccessSnapshot> {
     const user = await this.loadUser(userId);
     const ready = await this.ensureCounters(await this.closeTrialIfNeeded(user));
+    await this.maybeRemindTrial(ready, new Date());
     return this.snapshot(ready);
   }
 
   async consumePost(userId: string) {
     const snap = await this.resolve(userId);
+    this.assertWritable(snap);
     if (snap.postsTodayRemaining <= 0) {
       throw new ForbiddenException(
         `${label(snap.access)} includes ${snap.postsPerDay} posts today (IST).`,
@@ -95,6 +102,7 @@ export class EntitlementsService {
   async consumeImage(userId: string) {
     this.assertComposeRate(userId);
     const snap = await this.resolve(userId);
+    this.assertWritable(snap);
     if (snap.imageRemaining <= 0) {
       throw new BadRequestException(
         `${label(snap.access)} includes ${snap.imageCap} image gens. Upgrade for more.`,
@@ -113,6 +121,7 @@ export class EntitlementsService {
 
   async consumeAi(userId: string) {
     const snap = await this.resolve(userId);
+    this.assertWritable(snap);
     if (snap.aiRemaining <= 0) {
       throw new ForbiddenException(
         `${label(snap.access)} includes ${snap.aiCap} AI writes. Upgrade for more.`,
@@ -132,6 +141,7 @@ export class EntitlementsService {
   async assertAi(userId: string) {
     this.assertComposeRate(userId);
     const snap = await this.resolve(userId);
+    this.assertWritable(snap);
     if (snap.aiRemaining <= 0) {
       throw new ForbiddenException(
         `${label(snap.access)} includes ${snap.aiCap} AI writes. Upgrade for more.`,
@@ -176,12 +186,52 @@ export class EntitlementsService {
       return snap;
     }
 
-    await this.pauseToFree(userId);
+    if (snap.access === "TRIAL") {
+      await this.pauseToTrial(userId);
+    } else {
+      await this.pauseAll(userId);
+    }
+    return snap;
+  }
+
+  async assertWritable(userIdOrSnap: string | AccessSnapshot) {
+    const snap =
+      typeof userIdOrSnap === "string" ? await this.resolve(userIdOrSnap) : userIdOrSnap;
+    if (snap.access === "FREE") {
+      throw new ForbiddenException(PAY_TO_USE);
+    }
     return snap;
   }
 
   usableWhere() {
     return USABLE;
+  }
+
+  async sweepTrialMail() {
+    const now = new Date();
+    const lapsed = await this.prisma.user.findMany({
+      where: {
+        billingExempt: false,
+        plan: { notIn: ["PRO", "STUDIO"] },
+        trialClosedAt: null,
+        trialEndsAt: { lte: now },
+      },
+    });
+    for (const user of lapsed) {
+      await this.closeTrialIfNeeded(user);
+    }
+
+    const open = await this.prisma.user.findMany({
+      where: {
+        billingExempt: false,
+        plan: { notIn: ["PRO", "STUDIO"] },
+        trialClosedAt: null,
+        trialEndsAt: { gt: now },
+      },
+    });
+    for (const user of open) {
+      await this.maybeRemindTrial(user, now);
+    }
   }
 
   private assertComposeRate(userId: string) {
@@ -247,8 +297,13 @@ export class EntitlementsService {
     if (!user.trialEndsAt || user.trialEndsAt.getTime() > Date.now()) return user;
     if (user.trialClosedAt) return user;
 
-    const updated = await this.prisma.user.update({
-      where: { id: user.id },
+    const closed = await this.prisma.user.updateMany({
+      where: {
+        id: user.id,
+        trialClosedAt: null,
+        billingExempt: false,
+        plan: { notIn: ["PRO", "STUDIO"] },
+      },
       data: {
         trialClosedAt: new Date(),
         postsThisMonth: 0,
@@ -259,11 +314,42 @@ export class EntitlementsService {
         postsTodayResetAt: istDayStart(),
       },
     });
-    await this.pauseToFree(user.id);
+    if (closed.count === 0) {
+      return this.prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    }
+    await this.pauseAll(user.id);
+    const updated = await this.prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    this.mail.trialEnded(updated);
     return updated;
   }
 
-  private async pauseToFree(userId: string) {
+  private async maybeRemindTrial(user: User, now: Date) {
+    if (user.billingExempt || user.plan === "PRO" || user.plan === "STUDIO") return;
+    if (user.trialClosedAt) return;
+    if (!user.trialEndsAt || user.trialEndsAt.getTime() <= now.getTime()) return;
+
+    const days = trialDaysLeft(user.trialEndsAt, "TRIAL");
+    if (days == null) return;
+
+    if (days <= 1 && !user.trialReminded1dAt) {
+      const marked = await this.prisma.user.updateMany({
+        where: { id: user.id, trialReminded1dAt: null },
+        data: { trialReminded1dAt: now },
+      });
+      if (marked.count) this.mail.trialReminder(user, Math.max(1, days));
+      return;
+    }
+
+    if (days <= 3 && days > 1 && !user.trialReminded3dAt) {
+      const marked = await this.prisma.user.updateMany({
+        where: { id: user.id, trialReminded3dAt: null },
+        data: { trialReminded3dAt: now },
+      });
+      if (marked.count) this.mail.trialReminder(user, days);
+    }
+  }
+
+  private async pauseToTrial(userId: string) {
     await this.prisma.socialAccount.updateMany({
       where: { userId, platform: { in: PAID_PLATFORMS }, pausedByPlan: false },
       data: { pausedByPlan: true },
@@ -273,13 +359,20 @@ export class EntitlementsService {
       orderBy: { createdAt: "asc" },
       select: { id: true },
     });
-    const extra = live.slice(FREE_CHANNEL_LIMIT);
+    const extra = live.slice(TRIAL_CHANNEL_LIMIT);
     if (extra.length) {
       await this.prisma.socialAccount.updateMany({
         where: { id: { in: extra.map((row) => row.id) } },
         data: { pausedByPlan: true },
       });
     }
+  }
+
+  private async pauseAll(userId: string) {
+    await this.prisma.socialAccount.updateMany({
+      where: { userId, pausedByPlan: false },
+      data: { pausedByPlan: true },
+    });
   }
 
   private async ensureCounters(user: User) {

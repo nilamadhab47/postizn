@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -21,6 +22,7 @@ import type {
 import { Prisma } from "@prisma/client";
 import { EntitlementsService } from "../plan/entitlements.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { MailService } from "../mail/mail.service";
 import {
   PAYMENT_PROVIDER,
   resolveBillingProviderId,
@@ -32,10 +34,13 @@ import type {
 
 @Injectable()
 export class BillingService {
+  private readonly log = new Logger(BillingService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly entitlements: EntitlementsService,
+    private readonly mail: MailService,
     @Inject(PAYMENT_PROVIDER) private readonly payments: PaymentProvider,
   ) {}
 
@@ -91,7 +96,7 @@ export class BillingService {
     }
     if (!this.payments.attached()) {
       throw new ServiceUnavailableException(
-        `Checkout is ready to attach ${this.payments.id === "none" ? "Razorpay or Stripe" : this.payments.id}. No card is taken in this app — the adapter opens the provider hosted page.`,
+        `Checkout is ready to attach ${this.payments.id === "none" ? "Razorpay or Stripe" : this.payments.id}. Set keys on the API, not in Next.js.`,
       );
     }
 
@@ -127,7 +132,74 @@ export class BillingService {
       data: { providerRef: session.providerRef },
     });
 
-    return { url: session.url, checkoutId: checkout.id, plan: planRaw, interval: intervalRaw };
+    return {
+      checkoutId: checkout.id,
+      plan: planRaw,
+      interval: intervalRaw,
+      url: session.url ?? null,
+      keyId: session.keyId ?? null,
+      orderId: session.orderId ?? null,
+      subscriptionId: session.subscriptionId ?? null,
+      amount: session.amount ?? sku.amountPaise,
+      currency: session.currency ?? BILLING_CURRENCY,
+    };
+  }
+
+  async verifyPayment(
+    userId: string,
+    body: {
+      razorpay_order_id?: string;
+      razorpay_subscription_id?: string;
+      razorpay_payment_id?: string;
+      razorpay_signature?: string;
+    },
+  ) {
+    const paymentId = body.razorpay_payment_id?.trim() ?? "";
+    const signature = body.razorpay_signature?.trim() ?? "";
+    const claimed =
+      body.razorpay_subscription_id?.trim() || body.razorpay_order_id?.trim() || "";
+    if (!paymentId || !signature || !claimed) {
+      throw new BadRequestException("Missing payment fields");
+    }
+    if (!this.payments.attached()) {
+      throw new ServiceUnavailableException("Payment adapter is not attached.");
+    }
+
+    const checkout = await this.prisma.billingCheckout.findFirst({
+      where: { userId, providerRef: claimed },
+    });
+    if (!checkout?.providerRef) {
+      throw new BadRequestException("Checkout not found for this payment");
+    }
+
+    const ref = checkout.providerRef;
+    const subscriptionId = ref.startsWith("sub_") ? ref : undefined;
+    const orderId = ref.startsWith("order_") ? ref : undefined;
+    if (
+      !this.payments.verifyPaymentSignature({
+        paymentId,
+        signature,
+        subscriptionId,
+        orderId,
+      })
+    ) {
+      throw new BadRequestException("Payment signature mismatch");
+    }
+
+    const interval = fromPrismaInterval(checkout.interval);
+    await this.applyEvent({
+      providerEventId: paymentId,
+      type: subscriptionId ? "subscription.activated" : "checkout.completed",
+      checkoutId: checkout.id,
+      userId,
+      plan: checkout.plan === "STUDIO" ? "STUDIO" : "PRO",
+      interval,
+      providerSubscriptionId: subscriptionId,
+      currentPeriodEnd: periodEndFrom(interval),
+      payload: { paymentId, subscriptionId: subscriptionId ?? null, orderId: orderId ?? null },
+    });
+
+    return { ok: true, checkoutId: checkout.id, plan: checkout.plan };
   }
 
   async handleWebhook(
@@ -135,6 +207,7 @@ export class BillingService {
     headers: Record<string, string | string[] | undefined>,
   ) {
     const events = await this.payments.parseWebhook(rawBody, headers);
+    this.log.log(`Webhook ${this.payments.id}: ${events.length} event(s)`);
     for (const event of events) {
       await this.applyEvent(event);
     }
@@ -143,16 +216,17 @@ export class BillingService {
 
   /** Only path that grants or revokes a paid plan. Checkout success URLs must not call this. */
   async applyEvent(event: IncomingBillingEvent) {
+    const hydrated = await this.hydrate(event);
     const provider = toPrismaProvider(this.payments.id);
     try {
       await this.prisma.billingEvent.create({
         data: {
           provider,
-          providerEventId: event.providerEventId,
-          type: event.type,
-          userId: event.userId,
-          checkoutId: event.checkoutId,
-          payload: event.payload as Prisma.InputJsonValue,
+          providerEventId: hydrated.providerEventId,
+          type: hydrated.type,
+          userId: hydrated.userId,
+          checkoutId: hydrated.checkoutId,
+          payload: hydrated.payload as Prisma.InputJsonValue,
         },
       });
     } catch (err) {
@@ -163,22 +237,51 @@ export class BillingService {
     }
 
     if (
-      event.type === "checkout.completed" ||
-      event.type === "subscription.activated" ||
-      event.type === "subscription.renewed"
+      hydrated.type === "checkout.completed" ||
+      hydrated.type === "subscription.activated" ||
+      hydrated.type === "subscription.renewed"
     ) {
-      await this.activate(event);
-    } else if (event.type === "subscription.canceled" || event.type === "subscription.expired") {
-      await this.revoke(event);
-    } else if (event.type === "payment.failed") {
-      await this.markPastDue(event);
+      await this.activate(hydrated);
+    } else if (hydrated.type === "subscription.canceled" || hydrated.type === "subscription.expired") {
+      await this.revoke(hydrated);
+    } else if (hydrated.type === "payment.failed") {
+      await this.markPastDue(hydrated);
     }
 
     await this.prisma.billingEvent.updateMany({
-      where: { provider, providerEventId: event.providerEventId, processedAt: null },
+      where: { provider, providerEventId: hydrated.providerEventId, processedAt: null },
       data: { processedAt: new Date() },
     });
     return { duplicate: false };
+  }
+
+  private async hydrate(event: IncomingBillingEvent): Promise<IncomingBillingEvent> {
+    let userId = event.userId;
+    let plan = event.plan;
+    let interval = event.interval;
+    let checkoutId = event.checkoutId;
+
+    if (!userId && checkoutId) {
+      const checkout = await this.prisma.billingCheckout.findUnique({ where: { id: checkoutId } });
+      userId = checkout?.userId;
+      if (!plan && (checkout?.plan === "PRO" || checkout?.plan === "STUDIO")) {
+        plan = checkout.plan;
+      }
+      if (!interval && checkout) interval = fromPrismaInterval(checkout.interval);
+    }
+
+    if (!userId && event.providerSubscriptionId) {
+      const sub = await this.prisma.subscription.findFirst({
+        where: { providerSubscriptionId: event.providerSubscriptionId },
+      });
+      userId = sub?.userId;
+      if (!plan && (sub?.plan === "PRO" || sub?.plan === "STUDIO")) {
+        plan = sub.plan;
+      }
+      if (!interval && sub) interval = fromPrismaInterval(sub.interval);
+    }
+
+    return { ...event, userId, plan, interval, checkoutId };
   }
 
   private async activate(event: IncomingBillingEvent) {
@@ -193,6 +296,19 @@ export class BillingService {
     const interval = event.interval
       ? toPrismaInterval(event.interval)
       : checkout?.interval ?? "MONTHLY";
+
+    const [user, prior] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true, name: true, plan: true, billingExempt: true },
+      }),
+      this.prisma.subscription.findUnique({ where: { userId } }),
+    ]);
+    if (!user) return;
+
+    const alreadyPaid =
+      (user.plan === "PRO" || user.plan === "STUDIO") && prior?.status === "ACTIVE";
+    const priorEnd = prior?.currentPeriodEnd;
 
     await this.prisma.$transaction([
       this.prisma.user.update({
@@ -232,6 +348,25 @@ export class BillingService {
     }
 
     await this.entitlements.syncChannelAccess(userId);
+
+    const billed = {
+      email: user.email,
+      name: user.name,
+      billingExempt: user.billingExempt,
+      plan,
+      interval: fromPrismaInterval(interval),
+      periodEnd: event.currentPeriodEnd ?? null,
+    };
+    if (!alreadyPaid) {
+      this.mail.paymentSucceeded(billed);
+      return;
+    }
+    const moved =
+      Boolean(event.currentPeriodEnd && priorEnd) &&
+      (event.currentPeriodEnd as Date).getTime() > priorEnd!.getTime() + 12 * 60 * 60 * 1000;
+    if (event.type === "subscription.renewed" && moved) {
+      this.mail.subscriptionRenewed(billed);
+    }
   }
 
   private async revoke(event: IncomingBillingEvent) {
@@ -243,9 +378,14 @@ export class BillingService {
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { billingExempt: true },
+      select: { email: true, name: true, plan: true, billingExempt: true },
     });
-    if (user?.billingExempt) return;
+    if (!user || user.billingExempt) return;
+    const paidPlan = user.plan === "STUDIO" || user.plan === "PRO" ? user.plan : null;
+    const sub = await this.prisma.subscription.findUnique({
+      where: { userId },
+      select: { interval: true },
+    });
 
     await this.prisma.$transaction([
       this.prisma.user.update({
@@ -261,15 +401,53 @@ export class BillingService {
       }),
     ]);
     await this.entitlements.syncChannelAccess(userId);
+    if (paidPlan) {
+      this.mail.subscriptionEnded({
+        email: user.email,
+        name: user.name,
+        billingExempt: user.billingExempt,
+        plan: paidPlan,
+        interval: sub ? fromPrismaInterval(sub.interval) : "monthly",
+        reason: event.type === "subscription.expired" ? "expired" : "canceled",
+      });
+    }
   }
 
   private async markPastDue(event: IncomingBillingEvent) {
-    const userId = event.userId;
+    let userId = event.userId;
+    if (!userId && event.providerSubscriptionId) {
+      const sub = await this.prisma.subscription.findFirst({
+        where: { providerSubscriptionId: event.providerSubscriptionId },
+        select: { userId: true },
+      });
+      userId = sub?.userId;
+    }
     if (!userId) return;
+    const sub = await this.prisma.subscription.findUnique({
+      where: { userId },
+      include: { user: { select: { email: true, name: true, billingExempt: true } } },
+    });
+    if (!sub || sub.status === "PAST_DUE") {
+      await this.prisma.subscription.updateMany({
+        where: { userId },
+        data: { status: "PAST_DUE" },
+      });
+      return;
+    }
     await this.prisma.subscription.updateMany({
       where: { userId },
       data: { status: "PAST_DUE" },
     });
+    if (sub.plan === "PRO" || sub.plan === "STUDIO") {
+      this.mail.paymentFailed({
+        email: sub.user.email,
+        name: sub.user.name,
+        billingExempt: sub.user.billingExempt,
+        plan: sub.plan,
+        interval: fromPrismaInterval(sub.interval),
+        periodEnd: sub.currentPeriodEnd,
+      });
+    }
   }
 }
 
@@ -279,6 +457,13 @@ function toPrismaInterval(interval: BillingInterval): PrismaInterval {
 
 function fromPrismaInterval(interval: PrismaInterval): BillingInterval {
   return interval === "YEARLY" ? "yearly" : "monthly";
+}
+
+function periodEndFrom(interval: BillingInterval) {
+  const end = new Date();
+  if (interval === "yearly") end.setFullYear(end.getFullYear() + 1);
+  else end.setMonth(end.getMonth() + 1);
+  return end;
 }
 
 function toPrismaProvider(id: string): PrismaProvider {

@@ -1,5 +1,6 @@
 import { AuthProvider } from "@/lib/auth";
 import { AppShell } from "@/components/layout/app-shell";
+import { OnboardingHost } from "@/components/onboarding/onboarding-host";
 
 export default function ProtectedLayout({
   children,
@@ -9,6 +10,7 @@ export default function ProtectedLayout({
   return (
     <AuthProvider>
       <AppShell>{children}</AppShell>
+      <OnboardingHost />
     </AuthProvider>
   );
 }

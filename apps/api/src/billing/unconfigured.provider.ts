@@ -5,12 +5,13 @@ import type {
   CheckoutSession,
   IncomingBillingEvent,
   PaymentProvider,
+  SignatureInput,
 } from "./payment-provider";
 
 /**
- * Default adapter. Tomorrow drop in RazorpayProvider or StripeProvider
- * behind BILLING_PROVIDER=razorpay|stripe. Do not grant plans from a
- * success URL — only BillingService.applyEvent().
+ * Default when BILLING_PROVIDER is none/stripe. Razorpay lives in
+ * razorpay.provider.ts. Do not grant plans from a success URL —
+ * only BillingService.applyEvent().
  */
 export class UnconfiguredPaymentProvider implements PaymentProvider {
   constructor(readonly id: BillingProviderId) {}
@@ -23,6 +24,10 @@ export class UnconfiguredPaymentProvider implements PaymentProvider {
     throw new ServiceUnavailableException(
       `No payment adapter attached (${this.id}). Set BILLING_PROVIDER and add the provider file.`,
     );
+  }
+
+  verifyPaymentSignature(_input?: SignatureInput) {
+    return false;
   }
 
   parseWebhook(

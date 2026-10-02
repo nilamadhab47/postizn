@@ -15,6 +15,7 @@ import { newCodeVerifier } from "./providers/pkce";
 import type { AuthResult, BaseProvider } from "./providers/base-provider";
 import { SOON_CHANNELS, GONE_CHANNELS } from "./channel-catalog";
 import { EntitlementsService } from "../plan/entitlements.service";
+import { PAY_TO_USE } from "../plan/entitlements";
 
 @Injectable()
 export class SocialService {
@@ -39,6 +40,9 @@ export class SocialService {
       where: { userId, platform: provider.platform },
     });
     const access = await this.entitlements.syncChannelAccess(userId);
+    if (access.access === "FREE") {
+      throw new ForbiddenException(PAY_TO_USE);
+    }
     this.assertPlan(access.canUsePaidChannel, provider);
     await this.assertChannelCap(userId, access.channelLimit, Boolean(existing));
 
@@ -71,6 +75,9 @@ export class SocialService {
       where: { userId, platform: provider.platform },
     });
     const access = await this.entitlements.syncChannelAccess(userId);
+    if (access.access === "FREE") {
+      throw new ForbiddenException(PAY_TO_USE);
+    }
     this.assertPlan(access.canUsePaidChannel, provider);
     await this.assertChannelCap(userId, access.channelLimit, Boolean(existing));
 
@@ -92,9 +99,7 @@ export class SocialService {
       throw new NotFoundException("Channel not found");
     }
     if (account.pausedByPlan) {
-      throw new ForbiddenException(
-        "This channel is paused until Pro. Upgrade to send.",
-      );
+      throw new ForbiddenException(PAY_TO_USE);
     }
     const text =
       (content?.trim() || `postN test · ${new Date().toISOString()}`).slice(0, 2000);
@@ -113,7 +118,7 @@ export class SocialService {
     media: { url: string; mimeType: string; bytes: number }[] = [],
   ) {
     if (account.pausedByPlan) {
-      throw new Error("This channel is paused until Pro. Upgrade to send.");
+      throw new Error(PAY_TO_USE);
     }
     if (account.isMock) {
       throw new Error("Reconnect the live channel before publishing");
@@ -242,7 +247,8 @@ export class SocialService {
       providers: [
         ...this.registry.all().map((provider) => {
           const account = byPlatform.get(provider.platform);
-          const locked = provider.plan === "PRO" && !access.canUsePaidChannel;
+          const locked =
+            access.access === "FREE" || (provider.plan === "PRO" && !access.canUsePaidChannel);
           return {
             slug: provider.slug,
             platform: provider.platform,
@@ -264,7 +270,7 @@ export class SocialService {
           connectMode: "soon" as const,
           blurb: row.blurb,
           configured: false,
-          locked: !access.canUsePaidChannel,
+          locked: access.access === "FREE" || !access.canUsePaidChannel,
           tokenFields: [],
           account: null,
         })),
@@ -354,7 +360,7 @@ export class SocialService {
       where: { userId, ...this.entitlements.usableWhere() },
     });
     if (used >= limit) {
-      throw new ForbiddenException(`Channel limit reached (${limit})`);
+      throw new ForbiddenException(limit === 0 ? PAY_TO_USE : `Channel limit reached (${limit})`);
     }
   }
 

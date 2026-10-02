@@ -25,8 +25,21 @@ export type CheckoutInput = {
 };
 
 export type CheckoutSession = {
-  url: string;
+  /** Hosted-page adapters (e.g. Stripe Checkout). Standard Checkout leaves this unset. */
+  url?: string;
   providerRef: string;
+  orderId?: string;
+  subscriptionId?: string;
+  amount?: number;
+  currency?: string;
+  keyId?: string;
+};
+
+export type SignatureInput = {
+  paymentId: string;
+  signature: string;
+  orderId?: string;
+  subscriptionId?: string;
 };
 
 export type IncomingBillingEvent = {
@@ -46,6 +59,7 @@ export interface PaymentProvider {
   readonly id: BillingProviderId;
   attached(): boolean;
   createCheckout(input: CheckoutInput): Promise<CheckoutSession>;
+  verifyPaymentSignature(input: SignatureInput): boolean;
   parseWebhook(
     rawBody: Buffer,
     headers: Record<string, string | string[] | undefined>,

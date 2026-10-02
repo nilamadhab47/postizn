@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react";
-import Link from "next/link";
 import { toast } from "sonner";
+import { PayLink } from "@/components/billing/pay-link";
 import {
   HOURS,
   ROW_PX,
@@ -31,6 +31,7 @@ import {
   type CalPost,
 } from "@/lib/calendar-posts";
 import { ApiError } from "@/lib/api";
+import { usePaywall } from "@/lib/use-paywall";
 import {
   DaySheet,
   HourCluster,
@@ -41,6 +42,7 @@ import {
 type View = "day" | "week" | "month";
 
 export function CalendarBoard() {
+  const { block } = usePaywall();
   const today = useMemo(() => startOfDay(istWallClock()), []);
   const [now, setNow] = useState(() => istWallClock());
   const [view, setView] = useState<View>("week");
@@ -92,6 +94,7 @@ export function CalendarBoard() {
   }
 
   async function movePost(post: CalPost, day: Date, hour: number) {
+    if (block()) return;
     if (!post.canMove) return;
     if (sameDay(post.day, day) && post.hour === hour) return;
     if (hourRelation(day, hour, now) === "past") {
@@ -162,12 +165,12 @@ export function CalendarBoard() {
               </button>
             ))}
           </div>
-          <Link
+          <PayLink
             href="/compose"
             className="rounded-xl bg-accent px-4 py-2 text-sm font-bold text-accent-fg"
           >
             New post
-          </Link>
+          </PayLink>
         </div>
       </header>
 
@@ -399,7 +402,7 @@ function TimeGrid({
                     );
                   }
                   return (
-                    <Link
+                    <PayLink
                       key={hour}
                       href={composeHref(day, hour)}
                       className={`group block ${
@@ -414,7 +417,7 @@ function TimeGrid({
                           {slot === "now" ? "Post now" : "Schedule"}
                         </span>
                       ) : null}
-                    </Link>
+                    </PayLink>
                   );
                 })}
 

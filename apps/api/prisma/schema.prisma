@@ -49,6 +49,8 @@ model User {
   trialEndsAt       DateTime?
   trialUsed         Boolean   @default(false)
   trialClosedAt     DateTime?
+  trialReminded3dAt DateTime?
+  trialReminded1dAt DateTime?
   postsThisMonth    Int       @default(0)
   postsResetAt      DateTime?
   postsToday        Int       @default(0)

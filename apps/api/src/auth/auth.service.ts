@@ -10,6 +10,7 @@ import * as bcrypt from "bcryptjs";
 import { PrismaService } from "../prisma/prisma.service";
 import { EntitlementsService } from "../plan/entitlements.service";
 import { trialStartData } from "../plan/entitlements";
+import { MailService } from "../mail/mail.service";
 
 export type GoogleProfile = {
   googleId: string;
@@ -54,6 +55,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly entitlements: EntitlementsService,
+    private readonly mail: MailService,
   ) {}
 
   isGoogleConfigured() {
@@ -94,9 +96,11 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    return this.prisma.user.create({
+    const user = await this.prisma.user.create({
       data: { email, passwordHash, name, plan: "FREE", ...trialStartData() },
     });
+    this.mail.welcome(user);
+    return user;
   }
 
   async login(input: CredentialsInput) {
@@ -156,7 +160,7 @@ export class AuthService {
       });
     }
 
-    return this.prisma.user.create({
+    const user = await this.prisma.user.create({
       data: {
         email: email ?? this.syntheticEmail(profile),
         ...ids,
@@ -167,6 +171,8 @@ export class AuthService {
         ...trialStartData(),
       },
     });
+    this.mail.welcome(user);
+    return user;
   }
 
   async updateProfile(

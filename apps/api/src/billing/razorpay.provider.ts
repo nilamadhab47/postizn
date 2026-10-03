@@ -51,6 +51,10 @@ type RazorpayClient = {
       expire_by: number;
       notes: Record<string, string>;
     }) => Promise<RazorpaySubscription>;
+    cancel: (
+      id: string,
+      options?: { cancel_at_cycle_end?: boolean },
+    ) => Promise<RazorpaySubscription>;
   };
 };
 
@@ -122,6 +126,17 @@ export class RazorpayPaymentProvider implements PaymentProvider {
     } catch (err) {
       this.log.warn(`checkout failed: ${razorpayDetail(err)}`);
       throw mapRazorpayError(err);
+    }
+  }
+
+  async cancelSubscription(providerSubscriptionId: string) {
+    if (!this.client || !providerSubscriptionId.startsWith("sub_")) return;
+    try {
+      await this.client.subscriptions.cancel(providerSubscriptionId, {
+        cancel_at_cycle_end: false,
+      });
+    } catch (err) {
+      this.log.warn(`cancel ${providerSubscriptionId}: ${razorpayDetail(err)}`);
     }
   }
 

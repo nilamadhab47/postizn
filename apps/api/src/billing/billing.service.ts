@@ -100,6 +100,25 @@ export class BillingService {
       );
     }
 
+    const existing = await this.prisma.subscription.findUnique({ where: { userId } });
+    if (existing && (existing.status === "ACTIVE" || existing.status === "PAST_DUE")) {
+      const samePlan = existing.plan === planRaw;
+      const sameInterval = existing.interval === toPrismaInterval(intervalRaw);
+      if (samePlan && sameInterval) {
+        throw new BadRequestException(
+          `You're already on ${planRaw === "STUDIO" ? "Studio" : "Pro"} ${intervalRaw}.`,
+        );
+      }
+      const downgradePlan = existing.plan === "STUDIO" && planRaw === "PRO";
+      const downgradeInterval =
+        samePlan && existing.interval === "YEARLY" && intervalRaw === "monthly";
+      if (downgradePlan || downgradeInterval) {
+        throw new BadRequestException(
+          "That's a downgrade. Stay on the current cycle, or talk to us.",
+        );
+      }
+    }
+
     const sku = PAID_SKUS[planRaw][intervalRaw];
     const frontend = (this.config.get<string>("FRONTEND_URL") ?? "http://localhost:3000").replace(
       /\/$/,
@@ -309,6 +328,12 @@ export class BillingService {
     const alreadyPaid =
       (user.plan === "PRO" || user.plan === "STUDIO") && prior?.status === "ACTIVE";
     const priorEnd = prior?.currentPeriodEnd;
+    const replacedSubId =
+      prior?.providerSubscriptionId &&
+      event.providerSubscriptionId &&
+      prior.providerSubscriptionId !== event.providerSubscriptionId
+        ? prior.providerSubscriptionId
+        : null;
 
     await this.prisma.$transaction([
       this.prisma.user.update({
@@ -349,6 +374,10 @@ export class BillingService {
 
     await this.entitlements.syncChannelAccess(userId);
 
+    if (replacedSubId) {
+      await this.payments.cancelSubscription(replacedSubId);
+    }
+
     const billed = {
       email: user.email,
       name: user.name,
@@ -357,7 +386,9 @@ export class BillingService {
       interval: fromPrismaInterval(interval),
       periodEnd: event.currentPeriodEnd ?? null,
     };
-    if (!alreadyPaid) {
+    const cycleChanged =
+      Boolean(prior) && (prior!.plan !== plan || prior!.interval !== interval);
+    if (!alreadyPaid || cycleChanged) {
       this.mail.paymentSucceeded(billed);
       return;
     }
@@ -384,8 +415,18 @@ export class BillingService {
     const paidPlan = user.plan === "STUDIO" || user.plan === "PRO" ? user.plan : null;
     const sub = await this.prisma.subscription.findUnique({
       where: { userId },
-      select: { interval: true },
+      select: { interval: true, providerSubscriptionId: true },
     });
+    if (
+      event.providerSubscriptionId &&
+      sub?.providerSubscriptionId &&
+      event.providerSubscriptionId !== sub.providerSubscriptionId
+    ) {
+      this.log.log(
+        `Ignoring cancel for replaced subscription ${event.providerSubscriptionId}`,
+      );
+      return;
+    }
 
     await this.prisma.$transaction([
       this.prisma.user.update({
@@ -427,6 +468,14 @@ export class BillingService {
       where: { userId },
       include: { user: { select: { email: true, name: true, billingExempt: true } } },
     });
+    if (!sub) return;
+    if (
+      event.providerSubscriptionId &&
+      sub.providerSubscriptionId &&
+      event.providerSubscriptionId !== sub.providerSubscriptionId
+    ) {
+      return;
+    }
     if (!sub || sub.status === "PAST_DUE") {
       await this.prisma.subscription.updateMany({
         where: { userId },

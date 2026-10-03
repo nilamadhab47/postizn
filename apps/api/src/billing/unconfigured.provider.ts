@@ -30,6 +30,8 @@ export class UnconfiguredPaymentProvider implements PaymentProvider {
     return false;
   }
 
+  async cancelSubscription(_providerSubscriptionId: string) {}
+
   parseWebhook(
     _rawBody: Buffer,
     _headers: Record<string, string | string[] | undefined>,

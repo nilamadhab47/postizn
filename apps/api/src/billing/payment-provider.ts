@@ -60,6 +60,8 @@ export interface PaymentProvider {
   attached(): boolean;
   createCheckout(input: CheckoutInput): Promise<CheckoutSession>;
   verifyPaymentSignature(input: SignatureInput): boolean;
+  /** Stop a replaced subscription so monthly does not keep charging after a yearly switch. */
+  cancelSubscription(providerSubscriptionId: string): Promise<void>;
   parseWebhook(
     rawBody: Buffer,
     headers: Record<string, string | string[] | undefined>,

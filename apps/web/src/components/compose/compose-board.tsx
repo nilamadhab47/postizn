@@ -24,6 +24,7 @@ import {
   acceptedFiles,
   isFileDrag,
   mergePicked,
+  lastNewStill,
   videoLengthError,
   videoSeconds,
   type ComposeMedia,
@@ -31,6 +32,7 @@ import {
 import { mediaBundleError, mediaKind } from "@postn/shared";
 import { IstDateTimePicker } from "@/components/compose/ist-datetime-picker";
 import { MediaLibraryDialog } from "@/components/compose/media-library-picker";
+import { ImageEditorDialog } from "@/components/compose/image-editor-dialog";
 import {
   Dialog,
   DialogContent,
@@ -136,6 +138,7 @@ export function ComposeBoard({
   const [confirmNow, setConfirmNow] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [cropItem, setCropItem] = useState<ComposeMedia | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loadedStatus, setLoadedStatus] = useState<string | null>(null);
   const [pinnedPlatforms, setPinnedPlatforms] = useState<Record<string, boolean>>(
@@ -224,9 +227,15 @@ export function ComposeBoard({
         setGlobalDraft(post.content);
         setOverrides(post.contentByPlatform ?? {});
         setMedia(
-          (post.media ?? post.mediaUrls.map((url) => ({ url, mimeType: "image/jpeg" }))).map(
-            (item) => ({ url: item.url, mimeType: item.mimeType }),
-          ),
+          post.media?.length
+            ? post.media.map((item) => ({
+                url: item.url,
+                mimeType: item.mimeType,
+                id: item.id,
+                sourceId: item.sourceId,
+                sourceUrl: item.sourceUrl,
+              }))
+            : post.mediaUrls.map((url) => ({ url, mimeType: "image/jpeg" })),
         );
         if (post.scheduledAt) setWhen(toLocalInput(post.scheduledAt));
         const next: Record<string, boolean> = {};
@@ -383,16 +392,18 @@ export function ComposeBoard({
       );
       setImageLeft(data.remaining);
       void refresh();
-      const stored = await api<{ url: string; mimeType?: string }>("/media/data", {
-        method: "POST",
-        body: JSON.stringify({ dataUrl: data.dataUrl, fileName: "generated.png" }),
-      });
-      const incoming: ComposeMedia[] = [
-        { url: stored.url, mimeType: stored.mimeType ?? "image/png" },
-      ];
+        const stored = await api<{ url: string; mimeType?: string; id?: string }>("/media/data", {
+          method: "POST",
+          body: JSON.stringify({ dataUrl: data.dataUrl, fileName: "generated.png" }),
+        });
+        const incoming: ComposeMedia[] = [
+          { id: stored.id, url: stored.url, mimeType: stored.mimeType ?? "image/png" },
+        ];
       const merged = mergePicked(media, incoming);
       setMedia(merged.next);
       if (merged.note) setBanner({ kind: "ok", text: merged.note });
+      const still = lastNewStill(media, merged.next);
+      if (still) setCropItem(still);
       setImageOpen(false);
     } catch (err) {
       setImageError(
@@ -432,7 +443,7 @@ export function ComposeBoard({
     if (!incoming.length) {
       setBanner({
         kind: "err",
-        text: "Use a JPEG, PNG, WebP, GIF, or MP4",
+        text: "Use a JPEG, PNG, WebP, HEIC, GIF, or MP4",
       });
       return;
     }
@@ -445,7 +456,7 @@ export function ComposeBoard({
     if (!incoming.length) {
       setBanner({
         kind: "err",
-        text: "Use a JPEG, PNG, WebP, GIF, or MP4",
+        text: "Use a JPEG, PNG, WebP, HEIC, GIF, or MP4",
       });
       return;
     }
@@ -470,16 +481,30 @@ export function ComposeBoard({
         }
         const body = new FormData();
         body.append("file", file);
-        const stored = await api<{ url: string; mimeType: string }>("/media", {
+        const stored = await api<{
+          url: string;
+          mimeType: string;
+          id?: string;
+          sourceId?: string | null;
+          sourceUrl?: string | null;
+        }>("/media", {
           method: "POST",
           body,
         });
-        uploaded.push({ url: stored.url, mimeType: stored.mimeType });
+        uploaded.push({
+          id: stored.id,
+          url: stored.url,
+          mimeType: stored.mimeType,
+          sourceId: stored.sourceId ?? undefined,
+          sourceUrl: stored.sourceUrl ?? undefined,
+        });
       }
       if (uploaded.length) {
         const merged = mergePicked(media, uploaded);
         setMedia(merged.next);
         if (merged.note) setBanner({ kind: "ok", text: merged.note });
+        const still = lastNewStill(media, merged.next);
+        if (still) setCropItem(still);
       }
     } catch (err) {
       setBanner({
@@ -862,6 +887,18 @@ export function ComposeBoard({
                           className="max-h-52 w-full object-cover"
                         />
                       )}
+                      {mediaKind(item.mimeType) === "image" ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (block()) return;
+                            setCropItem(item);
+                          }}
+                          className="absolute left-2 top-2 rounded-lg bg-background/90 px-2 py-1 text-xs font-bold hover:bg-accent hover:text-accent-fg"
+                        >
+                          Crop
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() =>
@@ -876,7 +913,8 @@ export function ComposeBoard({
                 </div>
                 <p className="mt-2 text-[11px] font-semibold text-muted">
                   Drop files here or click Add. Up to 4 photos, or one GIF, or
-                  one MP4 (max 50 MB, 2:20). Slack and Dev.to skip video.
+                  one MP4 (max 50 MB, 2:20). iPhone HEIC converts on upload.
+                  Slack and Dev.to skip video.
                 </p>
               </div>
             ) : null}
@@ -1088,9 +1126,26 @@ export function ComposeBoard({
         onOpenChange={setLibraryOpen}
         current={media}
         onChange={(next, note) => {
+          const still = lastNewStill(media, next);
           setMedia(next);
           if (note) setBanner({ kind: "ok", text: note });
+          if (still) setCropItem(still);
         }}
+      />
+
+      <ImageEditorDialog
+        item={cropItem}
+        platforms={selectedPlatforms}
+        busy={Boolean(busy)}
+        onClose={() => setCropItem(null)}
+        onApplied={(next) => {
+          setMedia((prev) =>
+            prev.map((row) => (row.url === cropItem?.url ? next : row)),
+          );
+          setCropItem(null);
+          setBanner({ kind: "ok", text: "Crop saved. Original is still in your library." });
+        }}
+        onError={(message) => setBanner({ kind: "err", text: message })}
       />
 
       <Dialog
@@ -1336,7 +1391,13 @@ type SavedPost = {
   content: string;
   contentByPlatform: Record<string, string> | null;
   mediaUrls: string[];
-  media?: Array<{ url: string; mimeType: string }>;
+  media?: Array<{
+    url: string;
+    mimeType: string;
+    id?: string;
+    sourceId?: string;
+    sourceUrl?: string;
+  }>;
   status: string;
   scheduledAt: string | null;
   failedReason: string | null;

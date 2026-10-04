@@ -105,6 +105,9 @@ export type MediaRef = {
   url: string;
   mimeType: string;
   bytes: number;
+  id?: string;
+  sourceId?: string;
+  sourceUrl?: string;
 };
 
 export function mediaKind(mimeType: string): MediaKind | null {
@@ -207,5 +210,99 @@ export function isBillingInterval(value: string): value is BillingInterval {
 
 export function rupeesFromPaise(paise: number) {
   return paise / 100;
+}
+
+export const CROP_ASPECT_IDS = ["linkedin", "square", "x", "original", "custom"] as const;
+export type CropAspectId = (typeof CROP_ASPECT_IDS)[number];
+
+export type CropChip = {
+  id: CropAspectId;
+  label: string;
+  /** Width / height. Omit for original image ratio. */
+  ratio?: number;
+  bakeWidth: number;
+  bakeHeight: number;
+};
+
+export const CROP_CHIPS: CropChip[] = [
+  { id: "linkedin", label: "LinkedIn", ratio: 1200 / 627, bakeWidth: 1200, bakeHeight: 627 },
+  { id: "square", label: "Square", ratio: 1, bakeWidth: 1080, bakeHeight: 1080 },
+  { id: "x", label: "X", ratio: 16 / 9, bakeWidth: 1600, bakeHeight: 900 },
+  { id: "original", label: "Original", bakeWidth: 1600, bakeHeight: 1600 },
+  { id: "custom", label: "Custom", bakeWidth: 1600, bakeHeight: 1600 },
+];
+
+export type CropRecipe = {
+  aspect: CropAspectId;
+  zoom: number;
+  rotation: number;
+  flipX: boolean;
+  flipY: boolean;
+  crop: { x: number; y: number; width: number; height: number };
+};
+
+export function isCropAspectId(value: string): value is CropAspectId {
+  return (CROP_ASPECT_IDS as readonly string[]).includes(value);
+}
+
+export function cropChip(aspect: CropAspectId) {
+  return CROP_CHIPS.find((row) => row.id === aspect) ?? CROP_CHIPS[1];
+}
+
+export function parseCropRecipe(raw: unknown): CropRecipe | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const aspect = String(row.aspect ?? "");
+  if (!isCropAspectId(aspect)) return null;
+  const box = row.crop;
+  if (!box || typeof box !== "object") return null;
+  const crop = box as Record<string, unknown>;
+  const x = Number(crop.x);
+  const y = Number(crop.y);
+  const width = Number(crop.width);
+  const height = Number(crop.height);
+  const zoom = Number(row.zoom);
+  const rotation = Number(row.rotation);
+  if (![x, y, width, height, zoom, rotation].every(Number.isFinite)) return null;
+  if (width < 1 || height < 1 || width > 40_000 || height > 40_000) return null;
+  return {
+    aspect,
+    zoom,
+    rotation,
+    flipX: Boolean(row.flipX),
+    flipY: Boolean(row.flipY),
+    crop: { x, y, width, height },
+  };
+}
+
+export function defaultCropAspect(platforms: string[]): CropAspectId {
+  const set = new Set(platforms.map((p) => p.toUpperCase()));
+  const linkedIn = set.has("LINKEDIN") || set.has("LINKEDIN_PAGE");
+  const twitter = set.has("TWITTER");
+  if (linkedIn && !twitter) return "linkedin";
+  return "square";
+}
+
+export function looksLikeHeic(mimeType = "", fileName = "", buffer?: Uint8Array) {
+  const mime = mimeType.split(";")[0].trim().toLowerCase();
+  if (
+    mime === "image/heic" ||
+    mime === "image/heif" ||
+    mime === "image/heic-sequence" ||
+    mime === "image/heif-sequence"
+  ) {
+    return true;
+  }
+  if (/\.hei[cf]$/i.test(fileName)) return true;
+  if (buffer && buffer.length >= 12) {
+    const brand = String.fromCharCode(
+      buffer[8] ?? 0,
+      buffer[9] ?? 0,
+      buffer[10] ?? 0,
+      buffer[11] ?? 0,
+    ).toLowerCase();
+    return ["heic", "heix", "heif", "hevc", "hevx", "mif1", "msf1"].includes(brand);
+  }
+  return false;
 }
 

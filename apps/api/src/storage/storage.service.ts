@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   DeleteObjectCommand,
+  GetObjectCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -93,6 +94,18 @@ export class StorageService implements OnModuleInit {
     }
 
     return { key, url: this.publicObjectUrl(key) };
+  }
+
+  async getObject(key: string) {
+    if (!this.client || !this.bucket) {
+      throw new Error("R2 is not configured");
+    }
+    const out = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    const bytes = await out.Body?.transformToByteArray();
+    if (!bytes) throw new Error("Empty object");
+    return Buffer.from(bytes);
   }
 
   async deleteObject(key: string) {

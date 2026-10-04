@@ -4,8 +4,11 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   Post,
+  Query,
+  StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -24,6 +27,20 @@ export class MediaController {
   @Get()
   list(@CurrentUser() user: JwtUser) {
     return this.media.list(user.userId);
+  }
+
+  /** Bytes for canvas crop. Avoids R2 CORS tainting in the browser. */
+  @Get("file")
+  @Header("Cache-Control", "private, max-age=120")
+  async file(
+    @CurrentUser() user: JwtUser,
+    @Query("url") url: string,
+  ) {
+    if (!url?.trim()) {
+      throw new BadRequestException("Missing file url");
+    }
+    const { body, mimeType } = await this.media.loadOwned(user.userId, url.trim());
+    return new StreamableFile(body, { type: mimeType, disposition: "inline" });
   }
 
   @Post()
@@ -50,6 +67,25 @@ export class MediaController {
     @Body() body: { dataUrl?: string; fileName?: string },
   ) {
     return this.media.uploadDataUrl(user.userId, body.dataUrl ?? "", body.fileName);
+  }
+
+  @Post("derive")
+  derive(
+    @CurrentUser() user: JwtUser,
+    @Body() body: Record<string, unknown>,
+  ) {
+    const id = typeof body.id === "string" ? body.id : undefined;
+    const url = typeof body.url === "string" ? body.url : undefined;
+    return this.media.derive(user.userId, { id, url }, body);
+  }
+
+  @Post(":id/derive")
+  deriveById(
+    @CurrentUser() user: JwtUser,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    return this.media.derive(user.userId, { id }, body);
   }
 
   @Delete(":id")

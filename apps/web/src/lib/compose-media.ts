@@ -8,15 +8,21 @@ import {
 export type ComposeMedia = {
   url: string;
   mimeType: string;
+  id?: string;
+  sourceId?: string;
+  /** Original still, if this file was baked from a crop. */
+  sourceUrl?: string;
 };
 
 export const MEDIA_FILE_ACCEPT =
-  "image/jpeg,image/png,image/webp,image/gif,video/mp4";
+  "image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif,image/gif,video/mp4";
 
 const ACCEPT_TYPES = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
+  "image/heic",
+  "image/heif",
   "image/gif",
   "video/mp4",
 ]);
@@ -32,7 +38,7 @@ export function acceptedFiles(list: FileList | File[] | null | undefined) {
   return Array.from(list).filter(
     (file) =>
       ACCEPT_TYPES.has(file.type) ||
-      /\.(jpe?g|png|webp|gif|mp4)$/i.test(file.name),
+      /\.(jpe?g|png|webp|hei[cf]|gif|mp4)$/i.test(file.name),
   );
 }
 
@@ -75,6 +81,14 @@ export function mergePicked(current: ComposeMedia[], incoming: ComposeMedia[]) {
         ? "Photos replaced the video."
         : undefined,
   };
+}
+
+export function lastNewStill(previous: ComposeMedia[], next: ComposeMedia[]) {
+  const had = new Set(previous.map((row) => row.url));
+  const added = next.filter(
+    (item) => mediaKind(item.mimeType) === "image" && !had.has(item.url),
+  );
+  return added.at(-1) ?? null;
 }
 
 export function videoSeconds(file: File) {

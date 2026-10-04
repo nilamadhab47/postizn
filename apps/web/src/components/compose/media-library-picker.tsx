@@ -18,6 +18,8 @@ type LibraryItem = {
   fileName: string;
   mimeType?: string;
   bytes: number;
+  sourceId?: string | null;
+  sourceUrl?: string | null;
 };
 
 export function MediaLibraryDialog({
@@ -51,7 +53,13 @@ export function MediaLibraryDialog({
 
   function pick(item: LibraryItem) {
     const incoming: ComposeMedia[] = [
-      { url: item.url, mimeType: item.mimeType ?? "image/jpeg" },
+      {
+        id: item.id,
+        url: item.url,
+        mimeType: item.mimeType ?? "image/jpeg",
+        sourceId: item.sourceId ?? undefined,
+        sourceUrl: item.sourceUrl ?? undefined,
+      },
     ];
     if (attached.has(item.url)) {
       onChange(current.filter((row) => row.url !== item.url));

@@ -51,7 +51,7 @@ export function MediaBoard() {
     if (block()) return;
     const incoming = acceptedFiles(files);
     if (!incoming.length) {
-      setError("Use a JPEG, PNG, WebP, GIF, or MP4");
+      setError("Use a JPEG, PNG, WebP, HEIC, GIF, or MP4");
       return;
     }
     setBusy(true);
@@ -129,7 +129,7 @@ export function MediaBoard() {
           <p className="max-w-xl text-sm text-muted">
             Drop files here or upload. They go to Cloudflare R2 under{" "}
             <span className="font-semibold">postn/</span>. Photos up to 10 MB,
-            GIFs 15 MB, MP4 50 MB.
+            GIFs 15 MB, MP4 50 MB. iPhone HEIC becomes JPEG.
           </p>
           <label className="cursor-pointer rounded-xl bg-accent px-4 py-2 text-sm font-bold text-accent-fg">
             {busy ? "Uploading…" : "Upload"}
@@ -157,7 +157,7 @@ export function MediaBoard() {
           <div className="rounded-2xl border border-dashed border-line px-6 py-16 text-center">
             <p className="text-xl font-bold">No files yet</p>
             <p className="mt-2 text-base text-muted">
-              Drop a JPEG, PNG, WebP, GIF, or MP4, or click Upload.
+              Drop a JPEG, PNG, WebP, HEIC, GIF, or MP4, or click Upload.
             </p>
           </div>
         ) : (

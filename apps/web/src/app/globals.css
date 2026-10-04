@@ -479,3 +479,24 @@ select:focus-visible {
     animation: none;
   }
 }
+
+.ReactCrop {
+  --rc-drag-handle-size: 14px;
+  --rc-drag-handle-mobile-size: 22px;
+  --rc-drag-handle-bg-colour: var(--accent);
+  --rc-border-color: #fff;
+  --rc-focus-color: var(--accent);
+}
+
+.crop-stage .ReactCrop,
+.crop-stage .ReactCrop__child-wrapper,
+.crop-stage .ReactCrop__child-wrapper > img {
+  max-width: none;
+  max-height: none;
+}
+
+.ReactCrop__drag-handle {
+  border-radius: 1px;
+  background: var(--accent);
+  border: 2px solid #fff;
+}

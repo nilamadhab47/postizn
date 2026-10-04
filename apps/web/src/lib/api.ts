@@ -42,6 +42,22 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export async function apiBlob(path: string): Promise<Blob> {
+  const res = await fetch(`${API_URL}${path}`, { credentials: "include" });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const body = (await res.json()) as { message?: string | string[] };
+      if (Array.isArray(body.message)) message = body.message.join(", ");
+      else if (body.message) message = body.message;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, message);
+  }
+  return res.blob();
+}
+
 export type AccessId = "FREE" | "TRIAL" | "PRO" | "STUDIO";
 
 export type Me = {

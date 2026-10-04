@@ -37,7 +37,13 @@ export type SavedPost = {
   id: string;
   content: string;
   mediaUrls: string[];
-  media?: Array<{ url: string; mimeType: string }>;
+  media?: Array<{
+    url: string;
+    mimeType: string;
+    id?: string;
+    sourceId?: string;
+    sourceUrl?: string;
+  }>;
   status: string;
   scheduledAt: string | null;
   publishedAt: string | null;

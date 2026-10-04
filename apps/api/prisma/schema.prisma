@@ -143,11 +143,16 @@ model Media {
   mimeType  String
   fileName  String
   bytes     Int
+  parentId  String?
+  recipe    Json?
   createdAt DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent Media?  @relation("MediaDerives", fields: [parentId], references: [id], onDelete: SetNull)
+  derived Media[] @relation("MediaDerives")
 
   @@index([userId])
+  @@index([parentId])
 }
 
 model Notification {

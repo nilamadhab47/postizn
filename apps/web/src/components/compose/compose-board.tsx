@@ -27,6 +27,10 @@ import {
   lastNewStill,
   videoLengthError,
   videoSeconds,
+  mediaForPlatform,
+  mediaUrlsEqual,
+  replaceStill,
+  stripStillFromVariants,
   type ComposeMedia,
 } from "@/lib/compose-media";
 import { mediaBundleError, mediaKind } from "@postn/shared";
@@ -128,6 +132,9 @@ export function ComposeBoard({
   const [globalDraft, setGlobalDraft] = useState("");
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [media, setMedia] = useState<ComposeMedia[]>([]);
+  const [mediaByPlatform, setMediaByPlatform] = useState<
+    Record<string, ComposeMedia[]>
+  >({});
   const [when, setWhen] = useState(toLocalInput(initialAt));
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [live, setLive] = useState<ProviderRow[]>([]);
@@ -139,6 +146,7 @@ export function ComposeBoard({
   const [imageOpen, setImageOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [cropItem, setCropItem] = useState<ComposeMedia | null>(null);
+  const [cropPlatform, setCropPlatform] = useState<string | undefined>();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loadedStatus, setLoadedStatus] = useState<string | null>(null);
   const [pinnedPlatforms, setPinnedPlatforms] = useState<Record<string, boolean>>(
@@ -194,6 +202,9 @@ export function ComposeBoard({
     selectedPlatforms,
   );
   const hasMedia = media.length > 0;
+  const stills = media.filter((item) => mediaKind(item.mimeType) === "image");
+  const frameStill = stills.length === 1 ? stills[0] : null;
+  const perFeed = frameStill ? mediaByPlatform : {};
 
   useEffect(() => {
     void api<Catalog>("/social/channels")
@@ -226,17 +237,48 @@ export function ComposeBoard({
       .then((post) => {
         setGlobalDraft(post.content);
         setOverrides(post.contentByPlatform ?? {});
-        setMedia(
-          post.media?.length
-            ? post.media.map((item) => ({
-                url: item.url,
-                mimeType: item.mimeType,
-                id: item.id,
-                sourceId: item.sourceId,
-                sourceUrl: item.sourceUrl,
-              }))
-            : post.mediaUrls.map((url) => ({ url, mimeType: "image/jpeg" })),
-        );
+        const shared = post.media?.length
+          ? post.media.map((item) => ({
+              url: item.url,
+              mimeType: item.mimeType,
+              id: item.id,
+              sourceId: item.sourceId,
+              sourceUrl: item.sourceUrl,
+            }))
+          : post.mediaUrls.map((url) => ({ url, mimeType: "image/jpeg" }));
+        setMedia(shared);
+        const variants: Record<string, ComposeMedia[]> = {};
+        const singleStill =
+          shared.filter((item) => mediaKind(item.mimeType) === "image").length ===
+          1;
+        if (singleStill) {
+          if (post.mediaByPlatform) {
+            for (const [platform, files] of Object.entries(post.mediaByPlatform)) {
+              if (files?.length) {
+                variants[platform] = files.map((item) => ({
+                  url: item.url,
+                  mimeType: item.mimeType,
+                  id: item.id,
+                  sourceId: item.sourceId,
+                  sourceUrl: item.sourceUrl,
+                }));
+              }
+            }
+          } else {
+            for (const target of post.targets) {
+              if (target.media?.length) {
+                variants[target.platform] = target.media.map((item) => ({
+                  url: item.url,
+                  mimeType: item.mimeType,
+                  id: item.id,
+                  sourceId: item.sourceId,
+                  sourceUrl: item.sourceUrl,
+                }));
+              }
+            }
+          }
+        }
+        setMediaByPlatform(variants);
         if (post.scheduledAt) setWhen(toLocalInput(post.scheduledAt));
         const next: Record<string, boolean> = {};
         const pinned: Record<string, boolean> = {};
@@ -400,10 +442,10 @@ export function ComposeBoard({
           { id: stored.id, url: stored.url, mimeType: stored.mimeType ?? "image/png" },
         ];
       const merged = mergePicked(media, incoming);
-      setMedia(merged.next);
+      replaceMedia(merged.next);
       if (merged.note) setBanner({ kind: "ok", text: merged.note });
       const still = lastNewStill(media, merged.next);
-      if (still) setCropItem(still);
+      if (still) openCrop(still);
       setImageOpen(false);
     } catch (err) {
       setImageError(
@@ -501,10 +543,10 @@ export function ComposeBoard({
       }
       if (uploaded.length) {
         const merged = mergePicked(media, uploaded);
-        setMedia(merged.next);
+        replaceMedia(merged.next);
         if (merged.note) setBanner({ kind: "ok", text: merged.note });
         const still = lastNewStill(media, merged.next);
-        if (still) setCropItem(still);
+        if (still) openCrop(still);
       }
     } catch (err) {
       setBanner({
@@ -523,6 +565,61 @@ export function ComposeBoard({
       const next = { ...prev, [platform]: !prev[platform] };
       if (tab === platform && next[platform] === false) setTab("all");
       return next;
+    });
+  }
+
+  function openCrop(item: ComposeMedia, platform?: string) {
+    if (block()) return;
+    setCropPlatform(platform);
+    setCropItem(item);
+  }
+
+  function closeCrop() {
+    setCropItem(null);
+    setCropPlatform(undefined);
+  }
+
+  function replaceMedia(next: ComposeMedia[], drop?: ComposeMedia) {
+    setMedia(next);
+    const stillCount = next.filter((item) => mediaKind(item.mimeType) === "image")
+      .length;
+    if (stillCount !== 1) {
+      setMediaByPlatform({});
+      return;
+    }
+    if (drop) {
+      setMediaByPlatform((prev) => stripStillFromVariants(prev, drop));
+    }
+  }
+
+  function applyCrop(next: ComposeMedia) {
+    const from = cropItem;
+    if (!from) return;
+    if (cropPlatform) {
+      setMediaByPlatform((prev) => {
+        const current = mediaForPlatform(
+          media,
+          frameStill ? prev : {},
+          cropPlatform,
+        );
+        const list = replaceStill(current, from, next);
+        if (mediaUrlsEqual(list, media)) {
+          const copy = { ...prev };
+          delete copy[cropPlatform];
+          return copy;
+        }
+        return { ...prev, [cropPlatform]: list };
+      });
+    } else {
+      setMedia((prev) => replaceStill(prev, from, next));
+      setMediaByPlatform((prev) => stripStillFromVariants(prev, from));
+    }
+    closeCrop();
+    setBanner({
+      kind: "ok",
+      text: cropPlatform
+        ? `Crop saved for ${selectedRows.find((row) => row.platform === cropPlatform)?.label ?? "that feed"}. Original is still in your library.`
+        : "Crop saved for every feed. Original is still in your library.",
     });
   }
 
@@ -559,6 +656,20 @@ export function ComposeBoard({
         contentByPlatform[row.platform] = overrides[row.platform];
       }
     }
+    const mediaByPlatformPayload: Record<string, string[]> = {};
+    for (const row of rows) {
+      const files = perFeed[row.platform];
+      if (!files?.length) continue;
+      const urls = files
+        .filter((item) => item.url.startsWith("http"))
+        .map((item) => item.url);
+      const shared = media
+        .filter((item) => item.url.startsWith("http"))
+        .map((item) => item.url);
+      if (urls.length && urls.join("\0") !== shared.join("\0")) {
+        mediaByPlatformPayload[row.platform] = urls;
+      }
+    }
 
     if (loadedStatus === "PUBLISHING") {
       setBanner({
@@ -586,6 +697,7 @@ export function ComposeBoard({
             mediaUrls: media
               .filter((item) => item.url.startsWith("http"))
               .map((item) => item.url),
+            mediaByPlatform: mediaByPlatformPayload,
           }),
         },
       );
@@ -834,7 +946,7 @@ export function ComposeBoard({
               {hasMedia ? (
                 <button
                   type="button"
-                  onClick={() => setMedia([])}
+                  onClick={() => replaceMedia([])}
                   className="text-xs font-semibold text-muted hover:text-today"
                 >
                   Remove all
@@ -890,10 +1002,7 @@ export function ComposeBoard({
                       {mediaKind(item.mimeType) === "image" ? (
                         <button
                           type="button"
-                          onClick={() => {
-                            if (block()) return;
-                            setCropItem(item);
-                          }}
+                          onClick={() => openCrop(item)}
                           className="absolute left-2 top-2 rounded-lg bg-background/90 px-2 py-1 text-xs font-bold hover:bg-accent hover:text-accent-fg"
                         >
                           Crop
@@ -902,7 +1011,10 @@ export function ComposeBoard({
                       <button
                         type="button"
                         onClick={() =>
-                          setMedia((prev) => prev.filter((row) => row.url !== item.url))
+                          replaceMedia(
+                            media.filter((row) => row.url !== item.url),
+                            item,
+                          )
                         }
                         className="absolute right-2 top-2 rounded-lg bg-background/90 px-2 py-1 text-xs font-bold hover:bg-today hover:text-white"
                       >
@@ -916,6 +1028,70 @@ export function ComposeBoard({
                   one MP4 (max 50 MB, 2:20). iPhone HEIC converts on upload.
                   Slack and Dev.to skip video.
                 </p>
+                {frameStill && selectedRows.length > 1 ? (
+                  <div className="mt-3 space-y-1.5">
+                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-muted">
+                      Frame per feed
+                    </p>
+                    <p className="text-[11px] font-semibold text-muted">
+                      Same crop goes to every channel until you frame one.
+                    </p>
+                    {selectedRows.map((row) => {
+                      const custom = Boolean(perFeed[row.platform]?.length);
+                      const thumb = mediaForPlatform(
+                        media,
+                        perFeed,
+                        row.platform,
+                      ).find((item) => mediaKind(item.mimeType) === "image");
+                      return (
+                        <div
+                          key={row.platform}
+                          className="flex items-center gap-2 rounded-lg border border-line px-2 py-1.5"
+                        >
+                          <ChannelIcon slug={row.slug} className="size-6 rounded-md" />
+                          <span className="min-w-0 flex-1 truncate text-xs font-bold">
+                            {row.label}
+                          </span>
+                          <span className="text-[10px] font-semibold text-muted">
+                            {custom ? "This feed" : "Same crop"}
+                          </span>
+                          {thumb ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={thumb.url}
+                              alt=""
+                              className="size-8 rounded object-cover"
+                            />
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openCrop(thumb ?? frameStill, row.platform)
+                            }
+                            className="rounded-md px-2 py-1 text-[11px] font-bold hover:bg-background"
+                          >
+                            Frame
+                          </button>
+                          {custom ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setMediaByPlatform((prev) => {
+                                  const copy = { ...prev };
+                                  delete copy[row.platform];
+                                  return copy;
+                                })
+                              }
+                              className="rounded-md px-2 py-1 text-[11px] font-semibold text-muted hover:text-foreground"
+                            >
+                              Use shared
+                            </button>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </div>
             ) : null}
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2 text-[12px] font-bold">
@@ -1102,7 +1278,7 @@ export function ComposeBoard({
                     handle={account?.username || row.slug}
                     avatar={account?.avatar ?? null}
                     body={body}
-                    media={media}
+                    media={mediaForPlatform(media, perFeed, row.platform)}
                     when={whenLabel}
                   />
                 </button>
@@ -1127,24 +1303,23 @@ export function ComposeBoard({
         current={media}
         onChange={(next, note) => {
           const still = lastNewStill(media, next);
-          setMedia(next);
+          replaceMedia(next);
           if (note) setBanner({ kind: "ok", text: note });
-          if (still) setCropItem(still);
+          if (still) openCrop(still);
         }}
       />
 
       <ImageEditorDialog
         item={cropItem}
-        platforms={selectedPlatforms}
+        platforms={cropPlatform ? [cropPlatform] : selectedPlatforms}
+        feedLabel={
+          cropPlatform
+            ? selectedRows.find((row) => row.platform === cropPlatform)?.label
+            : undefined
+        }
         busy={Boolean(busy)}
-        onClose={() => setCropItem(null)}
-        onApplied={(next) => {
-          setMedia((prev) =>
-            prev.map((row) => (row.url === cropItem?.url ? next : row)),
-          );
-          setCropItem(null);
-          setBanner({ kind: "ok", text: "Crop saved. Original is still in your library." });
-        }}
+        onClose={closeCrop}
+        onApplied={applyCrop}
         onError={(message) => setBanner({ kind: "err", text: message })}
       />
 
@@ -1398,6 +1573,16 @@ type SavedPost = {
     sourceId?: string;
     sourceUrl?: string;
   }>;
+  mediaByPlatform?: Record<
+    string,
+    Array<{
+      url: string;
+      mimeType: string;
+      id?: string;
+      sourceId?: string;
+      sourceUrl?: string;
+    }>
+  >;
   status: string;
   scheduledAt: string | null;
   failedReason: string | null;
@@ -1406,6 +1591,13 @@ type SavedPost = {
     status: string;
     platformPostId?: string | null;
     failedReason: string | null;
+    media?: Array<{
+      url: string;
+      mimeType: string;
+      id?: string;
+      sourceId?: string;
+      sourceUrl?: string;
+    }>;
   }>;
 };
 

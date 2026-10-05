@@ -68,12 +68,17 @@ export type PostTarget = {
   platformPostId: string | null;
   failedReason: string | null;
   publishedAt: string | null;
+  mediaUrls?: string[];
+  media?: PostMedia[];
 };
 
 export type PostMedia = {
   url: string;
   mimeType: string;
   bytes?: number;
+  id?: string;
+  sourceId?: string;
+  sourceUrl?: string;
 };
 
 export type Post = {
@@ -82,6 +87,7 @@ export type Post = {
   contentByPlatform: Record<string, string> | null;
   mediaUrls: string[];
   media?: PostMedia[];
+  mediaByPlatform?: Record<string, PostMedia[]>;
   status: PostStatus;
   scheduledAt: string | null;
   publishedAt: string | null;

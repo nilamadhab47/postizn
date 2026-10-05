@@ -45,6 +45,7 @@ export type CreatePostInput = {
   platforms?: string[];
   scheduledAt?: string | null;
   mediaUrls?: string[];
+  mediaByPlatform?: Record<string, string[]>;
 };
 
 export type UpdatePostInput = CreatePostInput;
@@ -75,9 +76,23 @@ export class PostsService {
       (input.mediaUrls ?? []).filter((url) => typeof url === "string"),
     );
     const mediaUrls = media.map((item) => item.url);
+    const mediaByPlatform = await this.ownedMediaByPlatform(
+      userId,
+      input.mediaByPlatform,
+      platforms,
+    );
     if (action !== "draft") {
       const mediaError = mediaBundleError(media, platforms);
       if (mediaError) throw new BadRequestException(mediaError);
+      for (const platform of platforms) {
+        const variant = mediaByPlatform[platform];
+        if (!variant?.length) continue;
+        const variantError = mediaBundleError(
+          await this.media.ownedForUser(userId, variant),
+          [platform],
+        );
+        if (variantError) throw new BadRequestException(variantError);
+      }
     }
 
     if (action !== "draft" && !content && !Object.keys(overrides).length && !mediaUrls.length) {
@@ -91,7 +106,10 @@ export class PostsService {
 
     for (const platform of platforms) {
       const body = (overrides[platform] ?? content).trim();
-      if (action !== "draft" && !body && !mediaUrls.length) {
+      const files = mediaByPlatform[platform]?.length
+        ? mediaByPlatform[platform]
+        : mediaUrls;
+      if (action !== "draft" && !body && !files.length) {
         throw new BadRequestException(`${channelLabel(platform)} has no text`);
       }
       const limit = PLATFORM_CHAR_LIMITS[platform as SharedPlatform];
@@ -128,6 +146,7 @@ export class PostsService {
               socialAccountId: account.id,
               status: targetStatus,
               idempotencyKey: randomUUID(),
+              mediaUrls: mediaByPlatform[platform] ?? [],
             };
           }),
         },
@@ -217,7 +236,8 @@ export class PostsService {
       input.content == null &&
       input.contentByPlatform == null &&
       input.platforms == null &&
-      input.mediaUrls == null;
+      input.mediaUrls == null &&
+      input.mediaByPlatform == null;
     if (timeOnly) {
       return this.reschedule(userId, id, input.scheduledAt ?? undefined);
     }
@@ -254,6 +274,12 @@ export class PostsService {
       ),
     );
     const mediaUrls = media.map((item) => item.url);
+    const mediaByPlatform = await this.ownedMediaByPlatform(
+      userId,
+      input.mediaByPlatform,
+      platforms,
+      existing,
+    );
     const effectiveAction: PostAction =
       action === "keep"
         ? existing.status === PostStatus.SCHEDULED
@@ -266,6 +292,15 @@ export class PostsService {
     if (effectiveAction !== "draft") {
       const mediaError = mediaBundleError(media, platforms);
       if (mediaError) throw new BadRequestException(mediaError);
+      for (const platform of platforms) {
+        const variant = mediaByPlatform[platform];
+        if (!variant?.length) continue;
+        const variantError = mediaBundleError(
+          await this.media.ownedForUser(userId, variant),
+          [platform],
+        );
+        if (variantError) throw new BadRequestException(variantError);
+      }
     }
     if (
       effectiveAction !== "draft" &&
@@ -289,7 +324,10 @@ export class PostsService {
     const byPlatform = await this.requireLiveAccounts(userId, platforms);
     for (const platform of platforms) {
       const body = (overrides[platform] ?? content).trim();
-      if (effectiveAction !== "draft" && !body && !mediaUrls.length) {
+      const files = mediaByPlatform[platform]?.length
+        ? mediaByPlatform[platform]
+        : mediaUrls;
+      if (effectiveAction !== "draft" && !body && !files.length) {
         throw new BadRequestException(`${channelLabel(platform)} has no text`);
       }
       const limit = PLATFORM_CHAR_LIMITS[platform as SharedPlatform];
@@ -333,7 +371,13 @@ export class PostsService {
           : PostStatus.PUBLISHING;
 
     try {
-      await this.syncTargets(existing, platforms, byPlatform, unpublishedStatus);
+      await this.syncTargets(
+        existing,
+        platforms,
+        byPlatform,
+        unpublishedStatus,
+        mediaByPlatform,
+      );
       await this.prisma.post.update({
         where: { id },
         data: {
@@ -444,6 +488,7 @@ export class PostsService {
     platforms: Platform[],
     byPlatform: Map<Platform, { id: string }>,
     unpublishedStatus: PostStatus,
+    mediaByPlatform: Record<string, string[]>,
   ) {
     const wanted = new Set(platforms);
     for (const target of existing.targets) {
@@ -461,6 +506,7 @@ export class PostsService {
         (target) => target.socialAccount.platform === platform,
       );
       const account = byPlatform.get(platform)!;
+      const mediaUrls = mediaByPlatform[platform] ?? [];
       if (!current) {
         await this.prisma.postTarget.create({
           data: {
@@ -468,6 +514,7 @@ export class PostsService {
             socialAccountId: account.id,
             status: unpublishedStatus,
             idempotencyKey: randomUUID(),
+            mediaUrls,
           },
         });
         continue;
@@ -480,6 +527,7 @@ export class PostsService {
         data: {
           status: unpublishedStatus,
           socialAccountId: account.id,
+          mediaUrls,
           failedReason:
             unpublishedStatus === PostStatus.PUBLISHING
               ? null
@@ -580,7 +628,8 @@ export class PostsService {
       }
       const body = (overrides[target.socialAccount.platform] ?? current.content).trim();
       try {
-        const media = await this.media.hydrate(current.userId, current.mediaUrls);
+        const urls = target.mediaUrls.length ? target.mediaUrls : current.mediaUrls;
+        const media = await this.media.hydrate(current.userId, urls);
         const result = await this.social.publishToAccount(
           target.socialAccount,
           body,
@@ -747,23 +796,22 @@ export class PostsService {
     }>,
   ) {
     const overrides = asOverrideMap(post.contentByPlatform);
-    const media = await this.media.hydrate(post.userId, post.mediaUrls);
-    return {
-      id: post.id,
-      content: post.content,
-      contentByPlatform: Object.keys(overrides).length ? overrides : null,
-      mediaUrls: post.mediaUrls,
-      media,
-      status: post.status,
-      scheduledAt: post.scheduledAt?.toISOString() ?? null,
-      publishedAt: post.publishedAt?.toISOString() ?? null,
-      failedReason: publicFailed(post),
-      aiGenerated: post.aiGenerated,
-      jobId: post.jobId,
-      createdAt: post.createdAt.toISOString(),
-      targets: post.targets.map((target) => ({
+    const extraUrls = post.targets.flatMap((target) => target.mediaUrls);
+    const hydrated = await this.media.hydrate(post.userId, [
+      ...new Set([...post.mediaUrls, ...extraUrls]),
+    ]);
+    const byUrl = new Map(hydrated.map((item) => [item.url, item]));
+    const pick = (urls: string[]) =>
+      urls.map((url) => byUrl.get(url) ?? { url, mimeType: "image/jpeg", bytes: 0 });
+    const media = pick(post.mediaUrls);
+    const mediaByPlatform: Record<string, typeof media> = {};
+    const targets = post.targets.map((target) => {
+      const platform = target.socialAccount.platform;
+      const targetMedia = target.mediaUrls.length ? pick(target.mediaUrls) : [];
+      if (targetMedia.length) mediaByPlatform[platform] = targetMedia;
+      return {
         id: target.id,
-        platform: target.socialAccount.platform,
+        platform,
         status: target.status,
         platformPostId: target.platformPostId,
         failedReason:
@@ -771,8 +819,56 @@ export class PostsService {
             ? publicPublishError(target.failedReason)
             : null,
         publishedAt: target.publishedAt?.toISOString() ?? null,
-      })),
+        mediaUrls: target.mediaUrls,
+        media: targetMedia.length ? targetMedia : undefined,
+      };
+    });
+    return {
+      id: post.id,
+      content: post.content,
+      contentByPlatform: Object.keys(overrides).length ? overrides : null,
+      mediaUrls: post.mediaUrls,
+      media,
+      mediaByPlatform: Object.keys(mediaByPlatform).length ? mediaByPlatform : undefined,
+      status: post.status,
+      scheduledAt: post.scheduledAt?.toISOString() ?? null,
+      publishedAt: post.publishedAt?.toISOString() ?? null,
+      failedReason: publicFailed(post),
+      aiGenerated: post.aiGenerated,
+      jobId: post.jobId,
+      createdAt: post.createdAt.toISOString(),
+      targets,
     };
+  }
+
+  private async ownedMediaByPlatform(
+    userId: string,
+    input: Record<string, string[]> | undefined,
+    platforms: Platform[],
+    existing?: Prisma.PostGetPayload<{
+      include: { targets: { include: { socialAccount: true } } };
+    }>,
+  ) {
+    const next: Record<string, string[]> = {};
+    if (!input) {
+      for (const platform of platforms) {
+        const current = existing?.targets.find(
+          (target) => target.socialAccount.platform === platform,
+        );
+        if (current?.mediaUrls.length) next[platform] = current.mediaUrls;
+      }
+      return next;
+    }
+    for (const platform of platforms) {
+      const raw = input[platform];
+      if (!Array.isArray(raw) || !raw.length) continue;
+      const owned = await this.media.ownedForUser(
+        userId,
+        raw.filter((url) => typeof url === "string"),
+      );
+      if (owned.length) next[platform] = owned.map((item) => item.url);
+    }
+    return next;
   }
 }
 

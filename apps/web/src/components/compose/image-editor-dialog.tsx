@@ -33,18 +33,20 @@ type StoredMedia = ComposeMedia & { parentId?: string | null };
 type Props = {
   item: ComposeMedia | null;
   platforms: string[];
+  feedLabel?: string;
   busy: boolean;
   onClose: () => void;
   onApplied: (next: ComposeMedia) => void;
   onError: (message: string) => void;
 };
 
-export function ImageEditorDialog({ item, ...rest }: Props) {
+export function ImageEditorDialog({ item, platforms, ...rest }: Props) {
   if (!item) return null;
   return (
     <ImageEditorBody
-      key={item.sourceUrl ?? item.url}
+      key={`${item.sourceUrl ?? item.url}:${platforms.join(",")}`}
       item={item}
+      platforms={platforms}
       {...rest}
     />
   );
@@ -83,6 +85,7 @@ function clampZoom(value: number) {
 function ImageEditorBody({
   item,
   platforms,
+  feedLabel,
   busy,
   onClose,
   onApplied,
@@ -322,11 +325,13 @@ function ImageEditorBody({
         showCloseButton={!blocked}
       >
         <DialogHeader>
-          <DialogTitle>Frame the photo</DialogTitle>
+          <DialogTitle>
+            {feedLabel ? `Frame for ${feedLabel}` : "Frame the photo"}
+          </DialogTitle>
           <DialogDescription>
-            Drag the box to pick a region. Pull a corner to resize. Zoom the
-            photo to see the whole still or a detail. Skip keeps the original on
-            the post.
+            {feedLabel
+              ? `This crop only goes to ${feedLabel}. Other channels keep the shared crop until you frame them.`
+              : "Drag the box to pick a region. Pull a corner to resize. Zoom the photo to see the whole still or a detail. Skip keeps the original on the post."}
           </DialogDescription>
         </DialogHeader>
 

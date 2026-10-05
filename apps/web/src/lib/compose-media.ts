@@ -91,6 +91,52 @@ export function lastNewStill(previous: ComposeMedia[], next: ComposeMedia[]) {
   return added.at(-1) ?? null;
 }
 
+export function sameStill(a: ComposeMedia, b: ComposeMedia) {
+  const keys = [a.sourceId, a.id, a.sourceUrl, a.url].filter(Boolean) as string[];
+  const other = new Set(
+    [b.sourceId, b.id, b.sourceUrl, b.url].filter(Boolean) as string[],
+  );
+  return keys.some((key) => other.has(key));
+}
+
+export function replaceStill(
+  list: ComposeMedia[],
+  from: ComposeMedia,
+  to: ComposeMedia,
+) {
+  return list.map((row) => (sameStill(row, from) ? to : row));
+}
+
+export function dropStill(list: ComposeMedia[], item: ComposeMedia) {
+  return list.filter((row) => !sameStill(row, item));
+}
+
+export function mediaForPlatform(
+  media: ComposeMedia[],
+  byPlatform: Record<string, ComposeMedia[]>,
+  platform: string,
+) {
+  const override = byPlatform[platform];
+  return override?.length ? override : media;
+}
+
+export function mediaUrlsEqual(a: ComposeMedia[], b: ComposeMedia[]) {
+  if (a.length !== b.length) return false;
+  return a.every((row, index) => row.url === b[index]?.url);
+}
+
+export function stripStillFromVariants(
+  byPlatform: Record<string, ComposeMedia[]>,
+  item: ComposeMedia,
+) {
+  const next: Record<string, ComposeMedia[]> = {};
+  for (const [platform, list] of Object.entries(byPlatform)) {
+    const kept = dropStill(list, item);
+    if (kept.length) next[platform] = kept;
+  }
+  return next;
+}
+
 export function videoSeconds(file: File) {
   const url = URL.createObjectURL(file);
   return new Promise<number>((resolve, reject) => {

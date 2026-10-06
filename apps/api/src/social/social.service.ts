@@ -16,6 +16,7 @@ import type { AuthResult, BaseProvider } from "./providers/base-provider";
 import { SOON_CHANNELS, GONE_CHANNELS } from "./channel-catalog";
 import { EntitlementsService } from "../plan/entitlements.service";
 import { PAY_TO_USE } from "../plan/entitlements";
+import type { ChannelSettings } from "@postn/shared";
 
 @Injectable()
 export class SocialService {
@@ -115,7 +116,8 @@ export class SocialService {
   async publishToAccount(
     account: SocialAccount,
     content: string,
-    media: { url: string; mimeType: string; bytes: number }[] = [],
+    media: { url: string; mimeType: string; bytes: number; alt?: string }[] = [],
+    settings: ChannelSettings = {},
   ) {
     if (account.pausedByPlan) {
       throw new Error(PAY_TO_USE);
@@ -134,6 +136,7 @@ export class SocialService {
       content,
       mediaUrls,
       media,
+      settings,
       accessToken,
       platformId: ready.platformId,
     });

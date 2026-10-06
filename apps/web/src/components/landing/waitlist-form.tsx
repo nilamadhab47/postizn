@@ -3,6 +3,7 @@
 import { CheckCircle2 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState, type FormEvent } from "react";
+import { track } from "@/lib/analytics";
 
 export function WaitlistForm({
   size = "md",
@@ -32,6 +33,7 @@ export function WaitlistForm({
         setMessage(body.message ?? "Could not join right now. Try again.");
         return;
       }
+      track("waitlist_joined");
       setStatus("ok");
       setEmail("");
     } catch {

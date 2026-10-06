@@ -1,6 +1,7 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Platform } from "@prisma/client";
+import { cleanAltText, type MediaRef, xReplySettingsApi } from "@postn/shared";
 import { BaseProvider, type AuthResult, type PublishInput, type UploadInput } from "./base-provider";
 import { fetchRemoteFile, firstKind, itemsFromPublish } from "./fetch-media";
 import { challenge, expiryFromSeconds, hasKey } from "./pkce";
@@ -10,6 +11,7 @@ const TOKEN_URL = "https://api.x.com/2/oauth2/token";
 const ME_URL = "https://api.x.com/2/users/me?user.fields=profile_image_url,name,username";
 const TWEET_URL = "https://api.x.com/2/tweets";
 const MEDIA_UPLOAD_URL = "https://api.x.com/2/media/upload";
+const MEDIA_METADATA_URL = "https://api.x.com/2/media/metadata";
 const SCOPES = [
   "tweet.read",
   "tweet.write",
@@ -26,6 +28,7 @@ export class TwitterProvider extends BaseProvider {
   readonly plan = "FREE" as const;
   readonly connectMode = "oauth" as const;
   readonly blurb = "Personal account. Free.";
+  private readonly log = new Logger(TwitterProvider.name);
 
   constructor(private readonly config: ConfigService) {
     super();
@@ -89,7 +92,7 @@ export class TwitterProvider extends BaseProvider {
     if (toUpload.length) {
       const mediaIds: string[] = [];
       for (const item of toUpload) {
-        const mediaId = await this.uploadForTweet(input.accessToken, item.url);
+        const mediaId = await this.uploadForTweet(input.accessToken, item);
         if (mediaId) mediaIds.push(mediaId);
       }
       if (mediaIds.length) {
@@ -97,13 +100,20 @@ export class TwitterProvider extends BaseProvider {
       }
     }
 
+    const replySettings = xReplySettingsApi(
+      typeof input.settings?.reply === "string" ? input.settings.reply : undefined,
+    );
     const res = await fetch(TWEET_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${input.accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ text: input.content, ...mediaPayload }),
+      body: JSON.stringify({
+        text: input.content,
+        ...mediaPayload,
+        ...(replySettings ? { reply_settings: replySettings } : {}),
+      }),
     });
     const json = (await res.json()) as XProblem & { data?: { id?: string } };
     if (!res.ok || !json.data?.id) {
@@ -114,11 +124,11 @@ export class TwitterProvider extends BaseProvider {
 
   private async uploadForTweet(
     accessToken: string,
-    imageUrl: string,
+    item: MediaRef,
   ): Promise<string | null> {
-    const file = await fetchRemoteFile(imageUrl);
+    const file = await fetchRemoteFile(item.url);
     const imgBuf = file.buffer;
-    const contentType = file.mimeType || "image/jpeg";
+    const contentType = file.mimeType || item.mimeType || "image/jpeg";
     const mediaCategory = categoryFor(contentType);
 
     const initRes = await fetch(`${MEDIA_UPLOAD_URL}/initialize`, {
@@ -181,7 +191,36 @@ export class TwitterProvider extends BaseProvider {
     }
 
     await this.waitForMedia(accessToken, mediaId, finJson?.data?.processing_info);
+    await this.attachAlt(accessToken, mediaId, item.alt, mediaCategory);
     return mediaId;
+  }
+
+  private async attachAlt(
+    accessToken: string,
+    mediaId: string,
+    alt: string | undefined,
+    category: string,
+  ) {
+    const text = cleanAltText(alt);
+    if (!text) return;
+    if (category === "tweet_video") return;
+    const res = await fetch(MEDIA_METADATA_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: mediaId,
+        metadata: { alt_text: { text } },
+      }),
+    });
+    if (!res.ok) {
+      const json = (await res.json().catch(() => null)) as XProblem;
+      this.log.warn(
+        `X alt text skipped (${res.status}): ${xProblem(json, "metadata failed")}`,
+      );
+    }
   }
 
   private async waitForMedia(

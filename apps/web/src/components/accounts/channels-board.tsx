@@ -9,6 +9,7 @@ import { API_URL, api, ApiError } from "@/lib/api";
 import { CHANNEL_GUIDES } from "@/lib/channel-guides";
 import { useAuth } from "@/lib/auth";
 import { usePaywall } from "@/lib/use-paywall";
+import { track } from "@/lib/analytics";
 
 type ChannelAccount = {
   id: string;
@@ -144,6 +145,7 @@ export function ChannelsBoard() {
         method: "POST",
         body: JSON.stringify({ fields }),
       });
+      track("channel_connected", { platform: form.slug, mode: "token" });
       setForm(null);
       setFields({});
       setTokenConnected(true);
@@ -452,6 +454,13 @@ function ChannelActions({
           ) : (
           <a
             href={`${API_URL}/social/connect/${provider.slug}`}
+            onClick={() =>
+              track("channel_connect_started", {
+                platform: provider.slug,
+                mode: "oauth",
+                reconnect: true,
+              })
+            }
             className="rounded-md border border-line px-3 py-1.5 text-sm text-muted hover:text-foreground"
           >
             Reconnect
@@ -465,6 +474,11 @@ function ChannelActions({
                 onPaywall?.();
                 return;
               }
+              track("channel_connect_started", {
+                platform: provider.slug,
+                mode: "token",
+                reconnect: true,
+              });
               onToken();
             }}
             className="rounded-md border border-line px-3 py-1.5 text-sm text-muted hover:text-foreground"
@@ -518,7 +532,13 @@ function ChannelActions({
     return (
       <button
         type="button"
-        onClick={onToken}
+        onClick={() => {
+          track("channel_connect_started", {
+            platform: provider.slug,
+            mode: "token",
+          });
+          onToken();
+        }}
         className="shrink-0 rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background"
       >
         Connect
@@ -538,6 +558,12 @@ function ChannelActions({
     ) : (
     <a
       href={`${API_URL}/social/connect/${provider.slug}`}
+      onClick={() =>
+        track("channel_connect_started", {
+          platform: provider.slug,
+          mode: "oauth",
+        })
+      }
       className="shrink-0 rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background"
     >
       Connect

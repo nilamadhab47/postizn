@@ -7,6 +7,7 @@ import { api, ApiError, type AccessId } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { CHECKOUT_TRUST, inr } from "@/lib/pricing";
 import { loadRazorpayCheckout, openRazorpayModal } from "@/lib/razorpay-checkout";
+import { track } from "@/lib/analytics";
 import { PLAN_WELCOME_EVENT } from "@/lib/onboarding";
 import { rupeesFromPaise, type BillingInterval, type PaidPlanId } from "@postn/shared";
 
@@ -72,6 +73,7 @@ export function BillingPanel({ access }: { access: AccessId }) {
   async function startCheckout(plan: PaidPlanId) {
     setBusy(plan);
     setMessage(null);
+    track("checkout_started", { plan, interval: cycle, source: "settings" });
     try {
       const session = await api<{
         url: string | null;
@@ -101,10 +103,12 @@ export function BillingPanel({ access }: { access: AccessId }) {
           contactName: user?.name,
         });
         if (result.status === "dismissed") {
+          track("checkout_dismissed", { plan, interval: cycle, source: "settings" });
           setMessage("Checkout was closed. Nothing was charged.");
           return;
         }
         if (result.status === "failed") {
+          track("checkout_failed", { plan, interval: cycle, source: "settings" });
           setMessage(result.message);
           return;
         }
@@ -112,6 +116,7 @@ export function BillingPanel({ access }: { access: AccessId }) {
           method: "POST",
           body: JSON.stringify(result.payload),
         });
+        track("checkout_completed", { plan, interval: cycle, source: "settings" });
         await refresh();
         const me = await api<BillingMe>("/billing/me");
         setInfo(me);

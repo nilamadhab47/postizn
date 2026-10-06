@@ -2,6 +2,7 @@ import {
   MAX_POST_MEDIA,
   MAX_VIDEO_SECONDS,
   MIN_VIDEO_SECONDS,
+  cleanAltText,
   mediaKind,
 } from "@postn/shared";
 
@@ -12,6 +13,7 @@ export type ComposeMedia = {
   sourceId?: string;
   /** Original still, if this file was baked from a crop. */
   sourceUrl?: string;
+  alt?: string;
 };
 
 export const MEDIA_FILE_ACCEPT =
@@ -117,7 +119,13 @@ export function mediaForPlatform(
   platform: string,
 ) {
   const override = byPlatform[platform];
-  return override?.length ? override : media;
+  const list = override?.length ? override : media;
+  if (list === media) return list;
+  return list.map((item) => {
+    const source = media.find((row) => sameStill(row, item));
+    const alt = source?.alt ?? item.alt;
+    return alt === item.alt ? item : { ...item, alt };
+  });
 }
 
 export function mediaUrlsEqual(a: ComposeMedia[], b: ComposeMedia[]) {
@@ -133,6 +141,31 @@ export function stripStillFromVariants(
   for (const [platform, list] of Object.entries(byPlatform)) {
     const kept = dropStill(list, item);
     if (kept.length) next[platform] = kept;
+  }
+  return next;
+}
+
+export function canSetAlt(item: ComposeMedia) {
+  const kind = mediaKind(item.mimeType);
+  return kind === "image" || kind === "gif";
+}
+
+export function mediaAltPayload(
+  media: ComposeMedia[],
+  byPlatform: Record<string, ComposeMedia[]> = {},
+) {
+  const next: Record<string, string> = {};
+  const write = (item: ComposeMedia, text?: string) => {
+    const alt = cleanAltText(text ?? item.alt);
+    if (!alt || !item.url.startsWith("http")) return;
+    next[item.url] = alt;
+  };
+  for (const item of media) write(item);
+  for (const files of Object.values(byPlatform)) {
+    for (const item of files) {
+      const source = media.find((row) => sameStill(row, item));
+      write(item, source?.alt ?? item.alt);
+    }
   }
   return next;
 }

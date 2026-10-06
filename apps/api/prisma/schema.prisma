@@ -99,6 +99,8 @@ model Post {
   content           String
   contentByPlatform Json?
   mediaUrls         String[]
+  /** url → alt text. Empty / omitted keys mean no alt. */
+  mediaAlt          Json?
   status            PostStatus @default(DRAFT)
   scheduledAt       DateTime?
   publishedAt       DateTime?
@@ -127,6 +129,8 @@ model PostTarget {
   idempotencyKey  String     @unique
   /** Empty means inherit Post.mediaUrls (same crop). */
   mediaUrls       String[]
+  /** Provider knobs this target understands; others ignore unknown keys. */
+  settings        Json?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 

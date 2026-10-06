@@ -11,6 +11,7 @@ import {
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { api, type Me } from "@/lib/api";
+import { identifyUser, resetUser, track } from "@/lib/analytics";
 
 type AuthContextValue = {
   user: Me | null;
@@ -45,6 +46,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   const logout = useCallback(async () => {
+    track("user_logged_out");
+    resetUser();
     await api("/auth/logout", { method: "POST" });
     setUser(null);
     router.replace("/login");
@@ -53,6 +56,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (user) identifyUser(user);
+  }, [user]);
 
   const value = useMemo(
     () => ({ user, loading, refresh, logout }),

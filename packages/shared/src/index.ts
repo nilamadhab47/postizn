@@ -70,6 +70,7 @@ export type PostTarget = {
   publishedAt: string | null;
   mediaUrls?: string[];
   media?: PostMedia[];
+  settings?: ChannelSettings;
 };
 
 export type PostMedia = {
@@ -79,6 +80,7 @@ export type PostMedia = {
   id?: string;
   sourceId?: string;
   sourceUrl?: string;
+  alt?: string;
 };
 
 export type Post = {
@@ -88,6 +90,8 @@ export type Post = {
   mediaUrls: string[];
   media?: PostMedia[];
   mediaByPlatform?: Record<string, PostMedia[]>;
+  mediaAlt?: Record<string, string> | null;
+  settingsByPlatform?: Record<string, ChannelSettings>;
   status: PostStatus;
   scheduledAt: string | null;
   publishedAt: string | null;
@@ -104,6 +108,13 @@ export const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 export const MAX_DISCORD_FILE_BYTES = 25 * 1024 * 1024;
 export const MIN_VIDEO_SECONDS = 3;
 export const MAX_VIDEO_SECONDS = 140;
+export const MAX_ALT_TEXT = 1000;
+
+export function cleanAltText(value?: string | null) {
+  const text = (value ?? "").trim();
+  if (!text) return undefined;
+  return text.slice(0, MAX_ALT_TEXT);
+}
 
 export type MediaKind = "image" | "gif" | "video";
 
@@ -114,6 +125,7 @@ export type MediaRef = {
   id?: string;
   sourceId?: string;
   sourceUrl?: string;
+  alt?: string;
 };
 
 export function mediaKind(mimeType: string): MediaKind | null {
@@ -311,4 +323,67 @@ export function looksLikeHeic(mimeType = "", fileName = "", buffer?: Uint8Array)
   }
   return false;
 }
+
+export const X_REPLY_IDS = ["everyone", "following", "mentioned", "verified"] as const;
+export type XReplySetting = (typeof X_REPLY_IDS)[number];
+
+export const X_REPLY_OPTIONS: { id: XReplySetting; label: string }[] = [
+  { id: "everyone", label: "Everyone" },
+  { id: "following", label: "People you follow" },
+  { id: "mentioned", label: "People you mention" },
+  { id: "verified", label: "Verified" },
+];
+
+export const LINKEDIN_LAYOUT_IDS = ["images", "carousel"] as const;
+export type LinkedInLayout = (typeof LINKEDIN_LAYOUT_IDS)[number];
+
+export const LINKEDIN_LAYOUT_OPTIONS: { id: LinkedInLayout; label: string }[] = [
+  { id: "images", label: "Images" },
+  { id: "carousel", label: "Carousel" },
+];
+
+export type ChannelSettings = {
+  reply?: XReplySetting;
+  layout?: LinkedInLayout;
+};
+
+export function isXReplySetting(value: string): value is XReplySetting {
+  return (X_REPLY_IDS as readonly string[]).includes(value);
+}
+
+export function isLinkedInLayout(value: string): value is LinkedInLayout {
+  return (LINKEDIN_LAYOUT_IDS as readonly string[]).includes(value);
+}
+
+export function channelSettingsKind(platform: string) {
+  const value = platform.toUpperCase();
+  if (value === "TWITTER") return "reply" as const;
+  if (value === "LINKEDIN" || value === "LINKEDIN_PAGE") return "layout" as const;
+  return null;
+}
+
+export function cleanChannelSettings(platform: string, raw?: unknown): ChannelSettings {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const row = raw as Record<string, unknown>;
+  const kind = channelSettingsKind(platform);
+  const next: ChannelSettings = {};
+  if (kind === "reply") {
+    const reply = String(row.reply ?? "");
+    if (isXReplySetting(reply) && reply !== "everyone") next.reply = reply;
+  }
+  if (kind === "layout") {
+    const layout = String(row.layout ?? "");
+    if (isLinkedInLayout(layout) && layout !== "images") next.layout = layout;
+  }
+  return next;
+}
+
+/** X API v2 `reply_settings`. Omit for everyone. */
+export function xReplySettingsApi(reply?: string) {
+  if (reply === "following") return "following" as const;
+  if (reply === "mentioned") return "mentionedUsers" as const;
+  if (reply === "verified") return "verified" as const;
+  return undefined;
+}
+
 

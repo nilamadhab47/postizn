@@ -10,7 +10,7 @@ import {
 } from "@/lib/compose-text";
 import { mediaKind } from "@postn/shared";
 
-export type PreviewMedia = { url: string; mimeType: string };
+export type PreviewMedia = { url: string; mimeType: string; alt?: string };
 
 function resolveMedia(
   media?: PreviewMedia[],
@@ -38,7 +38,7 @@ function MediaStrip({ media }: { media: PreviewMedia[] }) {
   }
   if (media.length === 1) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={first.url} alt="" className="mt-2 max-h-56 w-full object-cover" />;
+    return <img src={first.url} alt={first.alt?.trim() || ""} className="mt-2 max-h-56 w-full object-cover" />;
   }
   return (
     <div className="mt-2 grid grid-cols-2 gap-0.5">
@@ -47,7 +47,7 @@ function MediaStrip({ media }: { media: PreviewMedia[] }) {
         <img
           key={item.url}
           src={item.url}
-          alt=""
+          alt={item.alt?.trim() || ""}
           className="h-28 w-full object-cover"
         />
       ))}

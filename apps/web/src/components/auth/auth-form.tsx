@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError, type Me } from "@/lib/api";
+import { identifyUser, track } from "@/lib/analytics";
 import { SAMPLE_ACCOUNT } from "@/lib/sample-account";
 
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
@@ -43,12 +44,14 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 
     setPending(true);
     try {
-      await api<Me>(isRegister ? "/auth/register" : "/auth/login", {
+      const me = await api<Me>(isRegister ? "/auth/register" : "/auth/login", {
         method: "POST",
         body: JSON.stringify(
           isRegister ? { name, email, password } : { email, password },
         ),
       });
+      identifyUser(me);
+      track(isRegister ? "user_signed_up" : "user_logged_in");
       if (isRegister) {
         try {
           sessionStorage.setItem("postn:fresh-account", "1");

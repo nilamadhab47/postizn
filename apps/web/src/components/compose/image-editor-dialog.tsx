@@ -9,6 +9,7 @@ import ReactCrop, {
 import "react-image-crop/dist/ReactCrop.css";
 import {
   CROP_CHIPS,
+  MAX_ALT_TEXT,
   defaultCropAspect,
   type CropAspectId,
   type CropChip,
@@ -34,6 +35,8 @@ type Props = {
   item: ComposeMedia | null;
   platforms: string[];
   feedLabel?: string;
+  altText?: string;
+  onAltText?: (value: string) => void;
   busy: boolean;
   onClose: () => void;
   onApplied: (next: ComposeMedia) => void;
@@ -86,6 +89,8 @@ function ImageEditorBody({
   item,
   platforms,
   feedLabel,
+  altText = "",
+  onAltText,
   busy,
   onClose,
   onApplied,
@@ -479,6 +484,23 @@ function ImageEditorBody({
             <FlipHorizontal2 />
             Flip
           </Button>
+        </div>
+
+        <div>
+          <textarea
+            value={altText}
+            onChange={(event) =>
+              onAltText?.(event.target.value.slice(0, MAX_ALT_TEXT))
+            }
+            rows={2}
+            disabled={blocked}
+            placeholder="Alt text for LinkedIn and X"
+            className="w-full resize-y rounded-lg border border-line bg-transparent px-2.5 py-1.5 text-xs font-semibold leading-snug outline-none placeholder:text-muted disabled:opacity-50"
+          />
+          <p className="mt-0.5 text-right text-[10px] font-semibold text-muted">
+            {altText.trim().length.toLocaleString("en-IN")} /{" "}
+            {MAX_ALT_TEXT.toLocaleString("en-IN")}
+          </p>
         </div>
 
         <DialogFooter>

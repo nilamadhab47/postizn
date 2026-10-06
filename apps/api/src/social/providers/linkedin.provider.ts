@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Platform } from "@prisma/client";
-import { mediaKind } from "@postn/shared";
+import { mediaKind, cleanAltText } from "@postn/shared";
 import { BaseProvider, type AuthResult, type PublishInput, type UploadInput } from "./base-provider";
 import type { ChannelPlan } from "../channel-catalog";
 import { expiryFromSeconds, hasKey } from "./pkce";
@@ -95,9 +95,9 @@ export class LinkedinProvider extends BaseProvider {
         input.platformId,
         items[0].url,
       );
-      mediaContent = { content: { media: { id: videoUrn } } };
+      mediaContent = { content: { media: mediaRef(videoUrn, items[0].alt) } };
     } else if (items.length >= 2) {
-      const urns: string[] = [];
+      const images: Array<{ id: string; altText?: string }> = [];
       for (const item of items) {
         if (mediaKind(item.mimeType) !== "image" && mediaKind(item.mimeType) !== "gif") {
           continue;
@@ -107,15 +107,15 @@ export class LinkedinProvider extends BaseProvider {
           input.platformId,
           item.url,
         );
-        if (urn) urns.push(urn);
+        if (urn) images.push(mediaRef(urn, item.alt));
       }
-      if (urns.length === 1) {
-        mediaContent = { content: { media: { id: urns[0] } } };
-      } else if (urns.length > 1) {
+      if (images.length === 1) {
+        mediaContent = { content: { media: images[0] } };
+      } else if (images.length > 1) {
         mediaContent = {
           content: {
             multiImage: {
-              images: urns.map((id) => ({ id })),
+              images,
             },
           },
         };
@@ -127,7 +127,7 @@ export class LinkedinProvider extends BaseProvider {
         items[0].url,
       );
       if (imageUrn) {
-        mediaContent = { content: { media: { id: imageUrn } } };
+        mediaContent = { content: { media: mediaRef(imageUrn, items[0].alt) } };
       }
     }
 
@@ -439,6 +439,11 @@ export class LinkedinProvider extends BaseProvider {
     }
     return json;
   }
+}
+
+function mediaRef(id: string, alt?: string) {
+  const altText = cleanAltText(alt);
+  return altText ? { id, altText } : { id };
 }
 
 function claimsFromIdToken(idToken?: string) {

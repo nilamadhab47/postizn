@@ -12,6 +12,7 @@ import {
 } from "@/lib/paywall";
 import { CHECKOUT_TRUST, inr } from "@/lib/pricing";
 import { loadRazorpayCheckout, openRazorpayModal } from "@/lib/razorpay-checkout";
+import { track } from "@/lib/analytics";
 import { rupeesFromPaise, type BillingInterval, type PaidPlanId } from "@postn/shared";
 import { Button } from "@/components/ui/button";
 import {
@@ -78,6 +79,7 @@ export function PaywallHost() {
   async function startCheckout(plan: PaidPlanId) {
     setBusy(plan);
     setMessage(null);
+    track("checkout_started", { plan, interval: cycle, source: "paywall" });
     try {
       const session = await api<{
         url: string | null;
@@ -105,10 +107,12 @@ export function PaywallHost() {
           contactName: user?.name,
         });
         if (result.status === "dismissed") {
+          track("checkout_dismissed", { plan, interval: cycle, source: "paywall" });
           setMessage("Checkout was closed. Nothing was charged.");
           return;
         }
         if (result.status === "failed") {
+          track("checkout_failed", { plan, interval: cycle, source: "paywall" });
           setMessage(result.message);
           return;
         }
@@ -116,6 +120,7 @@ export function PaywallHost() {
           method: "POST",
           body: JSON.stringify(result.payload),
         });
+        track("checkout_completed", { plan, interval: cycle, source: "paywall" });
         await refresh();
         if (user) finishTrialEnded(user.id);
         setOpen(false);

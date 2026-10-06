@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { api, ApiError, type Me } from "@/lib/api";
+import { track } from "@/lib/analytics";
 import { usePaywall } from "@/lib/use-paywall";
 import { PAY_TO_USE } from "@/lib/paywall";
 import { ChannelIcon } from "@/components/accounts/channel-icons";
@@ -29,14 +30,24 @@ import {
   videoSeconds,
   mediaForPlatform,
   mediaUrlsEqual,
+  mediaAltPayload,
+  canSetAlt,
   replaceStill,
+  sameStill,
   stripStillFromVariants,
   type ComposeMedia,
 } from "@/lib/compose-media";
-import { mediaBundleError, mediaKind } from "@postn/shared";
+import {
+  MAX_ALT_TEXT,
+  cleanChannelSettings,
+  mediaBundleError,
+  mediaKind,
+  type ChannelSettings,
+} from "@postn/shared";
 import { IstDateTimePicker } from "@/components/compose/ist-datetime-picker";
 import { MediaLibraryDialog } from "@/components/compose/media-library-picker";
 import { ImageEditorDialog } from "@/components/compose/image-editor-dialog";
+import { ChannelSettingsPanel } from "@/components/compose/channel-settings-panel";
 import {
   Dialog,
   DialogContent,
@@ -134,6 +145,9 @@ export function ComposeBoard({
   const [media, setMedia] = useState<ComposeMedia[]>([]);
   const [mediaByPlatform, setMediaByPlatform] = useState<
     Record<string, ComposeMedia[]>
+  >({});
+  const [settingsByPlatform, setSettingsByPlatform] = useState<
+    Record<string, ChannelSettings>
   >({});
   const [when, setWhen] = useState(toLocalInput(initialAt));
   const [selected, setSelected] = useState<Record<string, boolean>>({});
@@ -244,6 +258,7 @@ export function ComposeBoard({
               id: item.id,
               sourceId: item.sourceId,
               sourceUrl: item.sourceUrl,
+              alt: item.alt,
             }))
           : post.mediaUrls.map((url) => ({ url, mimeType: "image/jpeg" }));
         setMedia(shared);
@@ -261,6 +276,7 @@ export function ComposeBoard({
                   id: item.id,
                   sourceId: item.sourceId,
                   sourceUrl: item.sourceUrl,
+                  alt: item.alt,
                 }));
               }
             }
@@ -273,12 +289,26 @@ export function ComposeBoard({
                   id: item.id,
                   sourceId: item.sourceId,
                   sourceUrl: item.sourceUrl,
+                  alt: item.alt,
                 }));
               }
             }
           }
         }
         setMediaByPlatform(variants);
+        const loadedSettings: Record<string, ChannelSettings> = {};
+        if (post.settingsByPlatform) {
+          for (const [platform, value] of Object.entries(post.settingsByPlatform)) {
+            const cleaned = cleanChannelSettings(platform, value);
+            if (Object.keys(cleaned).length) loadedSettings[platform] = cleaned;
+          }
+        } else {
+          for (const target of post.targets) {
+            const cleaned = cleanChannelSettings(target.platform, target.settings);
+            if (Object.keys(cleaned).length) loadedSettings[target.platform] = cleaned;
+          }
+        }
+        setSettingsByPlatform(loadedSettings);
         if (post.scheduledAt) setWhen(toLocalInput(post.scheduledAt));
         const next: Record<string, boolean> = {};
         const pinned: Record<string, boolean> = {};
@@ -592,9 +622,18 @@ export function ComposeBoard({
     }
   }
 
+  function setStillAlt(item: ComposeMedia, alt: string) {
+    const next = alt.slice(0, MAX_ALT_TEXT);
+    setMedia((prev) =>
+      prev.map((row) => (sameStill(row, item) ? { ...row, alt: next } : row)),
+    );
+  }
+
   function applyCrop(next: ComposeMedia) {
     const from = cropItem;
     if (!from) return;
+    const live = media.find((row) => sameStill(row, from)) ?? from;
+    const baked = { ...next, alt: live.alt };
     if (cropPlatform) {
       setMediaByPlatform((prev) => {
         const current = mediaForPlatform(
@@ -602,7 +641,7 @@ export function ComposeBoard({
           frameStill ? prev : {},
           cropPlatform,
         );
-        const list = replaceStill(current, from, next);
+        const list = replaceStill(current, from, baked);
         if (mediaUrlsEqual(list, media)) {
           const copy = { ...prev };
           delete copy[cropPlatform];
@@ -611,10 +650,14 @@ export function ComposeBoard({
         return { ...prev, [cropPlatform]: list };
       });
     } else {
-      setMedia((prev) => replaceStill(prev, from, next));
+      setMedia((prev) => replaceStill(prev, from, baked));
       setMediaByPlatform((prev) => stripStillFromVariants(prev, from));
     }
     closeCrop();
+    track("media_cropped", {
+      scope: cropPlatform ? "channel" : "shared",
+      platform: cropPlatform,
+    });
     setBanner({
       kind: "ok",
       text: cropPlatform
@@ -698,11 +741,24 @@ export function ComposeBoard({
               .filter((item) => item.url.startsWith("http"))
               .map((item) => item.url),
             mediaByPlatform: mediaByPlatformPayload,
+            mediaAlt: mediaAltPayload(media, perFeed),
+            settingsByPlatform: Object.fromEntries(
+              rows.map((row) => [
+                row.platform,
+                settingsByPlatform[row.platform] ?? {},
+              ]),
+            ),
           }),
         },
       );
       const nextStatus =
         action === "draft" ? "DRAFT" : action === "schedule" ? "SCHEDULED" : post.status;
+      track("post_saved", {
+        action,
+        editing,
+        platforms: rows.map((row) => row.platform),
+        has_media: media.some((item) => item.url.startsWith("http")),
+      });
       router.push(`/posts?status=${nextStatus}`);
     } catch (err) {
       pending.current = false;
@@ -979,8 +1035,8 @@ export function ComposeBoard({
                   }`}
                 >
                   {media.map((item) => (
+                    <div key={item.url} className="space-y-1.5">
                     <div
-                      key={item.url}
                       className="relative overflow-hidden rounded-xl border border-line"
                     >
                       {mediaKind(item.mimeType) === "video" ? (
@@ -995,7 +1051,7 @@ export function ComposeBoard({
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={item.url}
-                          alt="Attached to this post"
+                          alt={item.alt?.trim() || "Attached to this post"}
                           className="max-h-52 w-full object-cover"
                         />
                       )}
@@ -1020,6 +1076,13 @@ export function ComposeBoard({
                       >
                         Remove
                       </button>
+                    </div>
+                    {canSetAlt(item) ? (
+                      <AltField
+                        value={item.alt ?? ""}
+                        onChange={(value) => setStillAlt(item, value)}
+                      />
+                    ) : null}
                     </div>
                   ))}
                 </div>
@@ -1117,6 +1180,21 @@ export function ComposeBoard({
                 <span className="text-muted">Pick at least one channel</span>
               )}
             </div>
+            {tab !== "all" ? (
+              <ChannelSettingsPanel
+                platform={tab}
+                settings={settingsByPlatform[tab] ?? {}}
+                stillCount={stills.length}
+                onChange={(next) =>
+                  setSettingsByPlatform((prev) => {
+                    const copy = { ...prev };
+                    if (Object.keys(next).length) copy[tab] = next;
+                    else delete copy[tab];
+                    return copy;
+                  })
+                }
+              />
+            ) : null}
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
@@ -1317,6 +1395,16 @@ export function ComposeBoard({
             ? selectedRows.find((row) => row.platform === cropPlatform)?.label
             : undefined
         }
+        altText={
+          cropItem
+            ? (media.find((row) => sameStill(row, cropItem))?.alt ??
+              cropItem.alt ??
+              "")
+            : ""
+        }
+        onAltText={(value) => {
+          if (cropItem) setStillAlt(cropItem, value);
+        }}
         busy={Boolean(busy)}
         onClose={closeCrop}
         onApplied={applyCrop}
@@ -1504,6 +1592,30 @@ function Spinner() {
   );
 }
 
+function AltField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value.slice(0, MAX_ALT_TEXT))}
+        rows={2}
+        placeholder="Alt text for LinkedIn and X"
+        className="w-full resize-y rounded-lg border border-line bg-transparent px-2.5 py-1.5 text-xs font-semibold leading-snug outline-none placeholder:text-muted"
+      />
+      <p className="mt-0.5 text-right text-[10px] font-semibold text-muted">
+        {value.trim().length.toLocaleString("en-IN")} /{" "}
+        {MAX_ALT_TEXT.toLocaleString("en-IN")}
+      </p>
+    </div>
+  );
+}
+
 function TabButton({
   on,
   onClick,
@@ -1572,6 +1684,7 @@ type SavedPost = {
     id?: string;
     sourceId?: string;
     sourceUrl?: string;
+    alt?: string;
   }>;
   mediaByPlatform?: Record<
     string,
@@ -1581,22 +1694,26 @@ type SavedPost = {
       id?: string;
       sourceId?: string;
       sourceUrl?: string;
+      alt?: string;
     }>
   >;
   status: string;
   scheduledAt: string | null;
   failedReason: string | null;
+  settingsByPlatform?: Record<string, ChannelSettings>;
   targets: Array<{
     platform: string;
     status: string;
     platformPostId?: string | null;
     failedReason: string | null;
+    settings?: ChannelSettings;
     media?: Array<{
       url: string;
       mimeType: string;
       id?: string;
       sourceId?: string;
       sourceUrl?: string;
+      alt?: string;
     }>;
   }>;
 };

@@ -12,8 +12,11 @@ import { Platform, PostStatus, Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import {
   PLATFORM_CHAR_LIMITS,
+  cleanAltText,
+  cleanChannelSettings,
   mediaBundleError,
   platformCharCount,
+  type ChannelSettings,
   type Platform as SharedPlatform,
 } from "@postn/shared";
 import { PrismaService } from "../prisma/prisma.service";
@@ -46,6 +49,8 @@ export type CreatePostInput = {
   scheduledAt?: string | null;
   mediaUrls?: string[];
   mediaByPlatform?: Record<string, string[]>;
+  mediaAlt?: Record<string, string>;
+  settingsByPlatform?: Record<string, ChannelSettings>;
 };
 
 export type UpdatePostInput = CreatePostInput;
@@ -80,6 +85,14 @@ export class PostsService {
       userId,
       input.mediaByPlatform,
       platforms,
+    );
+    const mediaAlt = await this.cleanMediaAlt(userId, input.mediaAlt, {
+      mediaUrls,
+      mediaByPlatform,
+    });
+    const settingsByPlatform = this.cleanSettingsByPlatform(
+      platforms,
+      input.settingsByPlatform,
     );
     if (action !== "draft") {
       const mediaError = mediaBundleError(media, platforms);
@@ -139,6 +152,9 @@ export class PostsService {
         status: postStatus,
         scheduledAt,
         mediaUrls,
+        mediaAlt: Object.keys(mediaAlt).length
+          ? (mediaAlt as Prisma.InputJsonValue)
+          : undefined,
         targets: {
           create: platforms.map((platform) => {
             const account = byPlatform.get(platform)!;
@@ -147,6 +163,7 @@ export class PostsService {
               status: targetStatus,
               idempotencyKey: randomUUID(),
               mediaUrls: mediaByPlatform[platform] ?? [],
+              settings: jsonSettings(settingsByPlatform[platform]),
             };
           }),
         },
@@ -237,7 +254,9 @@ export class PostsService {
       input.contentByPlatform == null &&
       input.platforms == null &&
       input.mediaUrls == null &&
-      input.mediaByPlatform == null;
+      input.mediaByPlatform == null &&
+      input.mediaAlt == null &&
+      input.settingsByPlatform == null;
     if (timeOnly) {
       return this.reschedule(userId, id, input.scheduledAt ?? undefined);
     }
@@ -278,6 +297,18 @@ export class PostsService {
       userId,
       input.mediaByPlatform,
       platforms,
+      existing,
+    );
+    const mediaAlt =
+      input.mediaAlt === undefined
+        ? asOverrideMap(existing.mediaAlt)
+        : await this.cleanMediaAlt(userId, input.mediaAlt, {
+            mediaUrls,
+            mediaByPlatform,
+          });
+    const settingsByPlatform = this.cleanSettingsByPlatform(
+      platforms,
+      input.settingsByPlatform,
       existing,
     );
     const effectiveAction: PostAction =
@@ -377,6 +408,7 @@ export class PostsService {
         byPlatform,
         unpublishedStatus,
         mediaByPlatform,
+        settingsByPlatform,
       );
       await this.prisma.post.update({
         where: { id },
@@ -386,6 +418,9 @@ export class PostsService {
             ? (overrides as Prisma.InputJsonValue)
             : Prisma.JsonNull,
           mediaUrls,
+          mediaAlt: Object.keys(mediaAlt).length
+            ? (mediaAlt as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
           status: postStatus,
           scheduledAt,
           failedReason: effectiveAction === "now" ? null : existing.failedReason,
@@ -489,6 +524,7 @@ export class PostsService {
     byPlatform: Map<Platform, { id: string }>,
     unpublishedStatus: PostStatus,
     mediaByPlatform: Record<string, string[]>,
+    settingsByPlatform: Record<string, ChannelSettings>,
   ) {
     const wanted = new Set(platforms);
     for (const target of existing.targets) {
@@ -507,6 +543,7 @@ export class PostsService {
       );
       const account = byPlatform.get(platform)!;
       const mediaUrls = mediaByPlatform[platform] ?? [];
+      const settings = jsonSettings(settingsByPlatform[platform]);
       if (!current) {
         await this.prisma.postTarget.create({
           data: {
@@ -515,6 +552,7 @@ export class PostsService {
             status: unpublishedStatus,
             idempotencyKey: randomUUID(),
             mediaUrls,
+            settings,
           },
         });
         continue;
@@ -528,6 +566,7 @@ export class PostsService {
           status: unpublishedStatus,
           socialAccountId: account.id,
           mediaUrls,
+          settings,
           failedReason:
             unpublishedStatus === PostStatus.PUBLISHING
               ? null
@@ -629,11 +668,15 @@ export class PostsService {
       const body = (overrides[target.socialAccount.platform] ?? current.content).trim();
       try {
         const urls = target.mediaUrls.length ? target.mediaUrls : current.mediaUrls;
-        const media = await this.media.hydrate(current.userId, urls);
+        const media = attachAlt(
+          await this.media.hydrate(current.userId, urls),
+          asOverrideMap(current.mediaAlt),
+        );
         const result = await this.social.publishToAccount(
           target.socialAccount,
           body,
           media,
+          cleanChannelSettings(target.socialAccount.platform, target.settings),
         );
         await this.prisma.postTarget.update({
           where: { id: target.id },
@@ -796,19 +839,28 @@ export class PostsService {
     }>,
   ) {
     const overrides = asOverrideMap(post.contentByPlatform);
+    const altMap = asOverrideMap(post.mediaAlt);
     const extraUrls = post.targets.flatMap((target) => target.mediaUrls);
     const hydrated = await this.media.hydrate(post.userId, [
       ...new Set([...post.mediaUrls, ...extraUrls]),
     ]);
     const byUrl = new Map(hydrated.map((item) => [item.url, item]));
     const pick = (urls: string[]) =>
-      urls.map((url) => byUrl.get(url) ?? { url, mimeType: "image/jpeg", bytes: 0 });
+      attachAlt(
+        urls.map(
+          (url) => byUrl.get(url) ?? { url, mimeType: "image/jpeg", bytes: 0 },
+        ),
+        altMap,
+      );
     const media = pick(post.mediaUrls);
     const mediaByPlatform: Record<string, typeof media> = {};
+    const settingsByPlatform: Record<string, ChannelSettings> = {};
     const targets = post.targets.map((target) => {
       const platform = target.socialAccount.platform;
       const targetMedia = target.mediaUrls.length ? pick(target.mediaUrls) : [];
       if (targetMedia.length) mediaByPlatform[platform] = targetMedia;
+      const settings = cleanChannelSettings(platform, target.settings);
+      if (Object.keys(settings).length) settingsByPlatform[platform] = settings;
       return {
         id: target.id,
         platform,
@@ -821,6 +873,7 @@ export class PostsService {
         publishedAt: target.publishedAt?.toISOString() ?? null,
         mediaUrls: target.mediaUrls,
         media: targetMedia.length ? targetMedia : undefined,
+        settings: Object.keys(settings).length ? settings : undefined,
       };
     });
     return {
@@ -830,6 +883,10 @@ export class PostsService {
       mediaUrls: post.mediaUrls,
       media,
       mediaByPlatform: Object.keys(mediaByPlatform).length ? mediaByPlatform : undefined,
+      mediaAlt: Object.keys(altMap).length ? altMap : undefined,
+      settingsByPlatform: Object.keys(settingsByPlatform).length
+        ? settingsByPlatform
+        : undefined,
       status: post.status,
       scheduledAt: post.scheduledAt?.toISOString() ?? null,
       publishedAt: post.publishedAt?.toISOString() ?? null,
@@ -870,6 +927,64 @@ export class PostsService {
     }
     return next;
   }
+
+  private async cleanMediaAlt(
+    userId: string,
+    raw: Record<string, string> | undefined,
+    owned: {
+      mediaUrls: string[];
+      mediaByPlatform: Record<string, string[]>;
+    },
+  ) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const extra = Object.values(owned.mediaByPlatform).flat();
+    const allowed = new Set(
+      (
+        await this.media.ownedForUser(userId, [
+          ...owned.mediaUrls,
+          ...extra,
+          ...Object.keys(raw),
+        ])
+      ).map((item) => item.url),
+    );
+    const next: Record<string, string> = {};
+    for (const [url, value] of Object.entries(raw)) {
+      if (!allowed.has(url)) continue;
+      const text = cleanAltText(value);
+      if (text) next[url] = text;
+    }
+    return next;
+  }
+
+  private cleanSettingsByPlatform(
+    platforms: Platform[],
+    raw?: Record<string, ChannelSettings>,
+    existing?: Prisma.PostGetPayload<{
+      include: { targets: { include: { socialAccount: true } } };
+    }>,
+  ) {
+    const next: Record<string, ChannelSettings> = {};
+    if (raw === undefined) {
+      for (const platform of platforms) {
+        const current = existing?.targets.find(
+          (target) => target.socialAccount.platform === platform,
+        );
+        const cleaned = cleanChannelSettings(platform, current?.settings);
+        if (Object.keys(cleaned).length) next[platform] = cleaned;
+      }
+      return next;
+    }
+    for (const platform of platforms) {
+      const cleaned = cleanChannelSettings(platform, raw[platform]);
+      if (Object.keys(cleaned).length) next[platform] = cleaned;
+    }
+    return next;
+  }
+}
+
+function jsonSettings(value?: ChannelSettings): Prisma.InputJsonValue | typeof Prisma.JsonNull {
+  if (!value || !Object.keys(value).length) return Prisma.JsonNull;
+  return value as Prisma.InputJsonValue;
 }
 
 function asOverrideMap(value: Prisma.JsonValue | null) {
@@ -879,6 +994,20 @@ function asOverrideMap(value: Prisma.JsonValue | null) {
     if (typeof item === "string" && item.trim()) next[key] = item;
   }
   return next;
+}
+
+function attachAlt<T extends { url: string; sourceUrl?: string; alt?: string }>(
+  items: T[],
+  altMap: Record<string, string>,
+) {
+  return items.map((item) => {
+    const alt =
+      altMap[item.url] ||
+      (item.sourceUrl ? altMap[item.sourceUrl] : "") ||
+      item.alt ||
+      undefined;
+    return alt ? { ...item, alt } : item;
+  });
 }
 
 function publicFailed(

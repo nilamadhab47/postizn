@@ -15,12 +15,14 @@ export type PublishMedia = {
   url: string;
   mimeType: string;
   bytes: number;
+  alt?: string;
 };
 
 export type PublishInput = {
   content: string;
   mediaUrls: string[];
   media?: PublishMedia[];
+  settings?: Record<string, unknown>;
   accessToken: string;
   platformId: string;
 };

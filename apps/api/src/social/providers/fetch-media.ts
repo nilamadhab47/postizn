@@ -1,8 +1,20 @@
 import { mediaKind, type MediaRef } from "@postn/shared";
+import { sniffUploadMime } from "../../media/sniff-upload";
+import type { StorageService } from "../../storage/storage.service";
 import type { PublishInput } from "./base-provider";
+import { assertSafeMediaUrl } from "./safe-fetch";
 
-export async function fetchRemoteFile(url: string) {
-  const res = await fetch(url);
+export async function fetchRemoteFile(url: string, storage: StorageService) {
+  const owned = await storage.loadOwnedObject(url);
+  if (owned) {
+    return {
+      buffer: owned.buffer,
+      mimeType: sniffUploadMime(owned.buffer) ?? owned.mimeType,
+    };
+  }
+
+  await assertSafeMediaUrl(url, storage.allowedFetchHosts());
+  const res = await fetch(url, { redirect: "error" });
   if (!res.ok) {
     throw new Error("Could not fetch the attached file");
   }

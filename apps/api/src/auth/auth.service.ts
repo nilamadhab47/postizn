@@ -6,11 +6,14 @@ import {
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
+import type { Request } from "express";
+import { SESSION_COOKIE } from "./auth.constants";
 import * as bcrypt from "bcryptjs";
 import { PrismaService } from "../prisma/prisma.service";
 import { EntitlementsService } from "../plan/entitlements.service";
 import { trialStartData } from "../plan/entitlements";
 import { MailService } from "../mail/mail.service";
+import { oauthLinkDecision } from "./oauth-link";
 
 export type GoogleProfile = {
   googleId: string;
@@ -31,7 +34,6 @@ export type OauthProfile = {
   emailVerified?: boolean;
 };
 
-export const SESSION_COOKIE = "postn_session";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const ALLOWED_TIMEZONES = [
   "Asia/Kolkata",
@@ -149,6 +151,10 @@ export class AuthService {
           "This email is already linked to a different account",
         );
       }
+      const decision = oauthLinkDecision(existing, profile);
+      if (decision.action === "conflict") {
+        throw new ConflictException(decision.message);
+      }
       return this.prisma.user.update({
         where: { id: existing.id },
         data: {
@@ -156,6 +162,9 @@ export class AuthService {
           name: existing.name ?? profile.name,
           image: existing.image ?? profile.image,
           emailVerified: verifiedAt ?? existing.emailVerified,
+          ...(decision.action === "takeover-unverified"
+            ? { passwordHash: null, emailVerified: new Date() }
+            : {}),
         },
       });
     }
@@ -221,8 +230,27 @@ export class AuthService {
     return this.getMe(userId);
   }
 
-  signSession(userId: string) {
-    return this.jwt.sign({ sub: userId });
+  async signSession(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { sessionVersion: true },
+    });
+    return this.jwt.sign({ sub: userId, sv: user?.sessionVersion ?? 0 });
+  }
+
+  async revokeSessionFromRequest(req: Request) {
+    const token = req.cookies?.[SESSION_COOKIE];
+    if (!token) return;
+    try {
+      const payload = this.jwt.verify(token) as { sub?: string };
+      if (!payload.sub) return;
+      await this.prisma.user.update({
+        where: { id: payload.sub },
+        data: { sessionVersion: { increment: 1 } },
+      });
+    } catch {
+      // Cookie already invalid or user gone — still clear it.
+    }
   }
 
   async getMe(userId: string) {

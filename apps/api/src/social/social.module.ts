@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module";
+import { StorageModule } from "../storage/storage.module";
 import { SocialController } from "./social.controller";
 import { SocialService } from "./social.service";
 import { OauthStateStore } from "./oauth-state.store";
@@ -13,7 +14,7 @@ import { SlackProvider } from "./providers/slack.provider";
 import { DiscordProvider } from "./providers/discord.provider";
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, StorageModule],
   controllers: [SocialController],
   providers: [
     SocialService,

@@ -7,6 +7,7 @@ import { AuthService } from "./auth.service";
 import { JwtStrategy } from "./jwt.strategy";
 import { OauthLoginService } from "./oauth-login.service";
 import { LoginOauthStateStore } from "./login-oauth-state.store";
+import { jwtSecretFrom } from "../config/secrets";
 
 @Module({
   imports: [
@@ -15,7 +16,7 @@ import { LoginOauthStateStore } from "./login-oauth-state.store";
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>("JWT_SECRET") ?? "dev-only-change-me",
+        secret: jwtSecretFrom(config),
         signOptions: { expiresIn: "7d" },
       }),
     }),

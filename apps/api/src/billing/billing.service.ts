@@ -31,6 +31,7 @@ import type {
   IncomingBillingEvent,
   PaymentProvider,
 } from "./payment-provider";
+import { pickWebhookActor } from "./webhook-identity";
 
 @Injectable()
 export class BillingService {
@@ -275,32 +276,72 @@ export class BillingService {
   }
 
   private async hydrate(event: IncomingBillingEvent): Promise<IncomingBillingEvent> {
-    let userId = event.userId;
-    let plan = event.plan;
-    let interval = event.interval;
-    let checkoutId = event.checkoutId;
+    const payload = event.payload as {
+      payload?: {
+        payment?: { entity?: { order_id?: string; subscription_id?: string } };
+        subscription?: { entity?: { id?: string } };
+      };
+    } | null;
+    const providerOrderId =
+      payload?.payload?.payment?.entity?.order_id || undefined;
+    const providerSubscriptionId =
+      event.providerSubscriptionId ||
+      payload?.payload?.subscription?.entity?.id ||
+      payload?.payload?.payment?.entity?.subscription_id ||
+      undefined;
 
-    if (!userId && checkoutId) {
-      const checkout = await this.prisma.billingCheckout.findUnique({ where: { id: checkoutId } });
-      userId = checkout?.userId;
-      if (!plan && (checkout?.plan === "PRO" || checkout?.plan === "STUDIO")) {
-        plan = checkout.plan;
-      }
-      if (!interval && checkout) interval = fromPrismaInterval(checkout.interval);
+    const checkout = await this.findCheckoutForWebhook({
+      checkoutId: event.checkoutId,
+      providerRef: providerSubscriptionId || providerOrderId,
+    });
+    const subscription = providerSubscriptionId
+      ? await this.prisma.subscription.findFirst({
+          where: { providerSubscriptionId },
+        })
+      : null;
+
+    const actor = pickWebhookActor({
+      hint: {
+        notesUserId: event.userId,
+        checkoutId: event.checkoutId,
+        providerSubscriptionId,
+        providerOrderId,
+      },
+      checkout,
+      subscription,
+    });
+    if (actor.notesMismatch) {
+      this.log.warn(
+        `Webhook notes.userId did not match checkout/subscription ${actor.userId}`,
+      );
     }
 
-    if (!userId && event.providerSubscriptionId) {
-      const sub = await this.prisma.subscription.findFirst({
-        where: { providerSubscriptionId: event.providerSubscriptionId },
+    return {
+      ...event,
+      userId: actor.userId,
+      checkoutId: actor.checkoutId,
+      plan: actor.plan ?? event.plan,
+      interval: actor.interval
+        ? fromPrismaInterval(actor.interval as PrismaInterval)
+        : event.interval,
+      providerSubscriptionId,
+    };
+  }
+
+  private async findCheckoutForWebhook(input: {
+    checkoutId?: string;
+    providerRef?: string;
+  }) {
+    if (input.providerRef) {
+      const byRef = await this.prisma.billingCheckout.findFirst({
+        where: { providerRef: input.providerRef },
       });
-      userId = sub?.userId;
-      if (!plan && (sub?.plan === "PRO" || sub?.plan === "STUDIO")) {
-        plan = sub.plan;
-      }
-      if (!interval && sub) interval = fromPrismaInterval(sub.interval);
+      if (byRef) return byRef;
     }
-
-    return { ...event, userId, plan, interval, checkoutId };
+    if (!input.checkoutId) return null;
+    return this.prisma.billingCheckout.findUnique({
+      where: { id: input.checkoutId },
+    });
   }
 
   private async activate(event: IncomingBillingEvent) {

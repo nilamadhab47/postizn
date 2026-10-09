@@ -1,5 +1,7 @@
 import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { Platform } from "@prisma/client";
+import { StorageService } from "../../storage/storage.service";
 import { expiryFromSeconds } from "./pkce";
 import {
   LinkedinProvider,
@@ -31,6 +33,10 @@ type OrgProfile = {
 
 @Injectable()
 export class LinkedinPageProvider extends LinkedinProvider {
+  constructor(config: ConfigService, storage: StorageService) {
+    super(config, storage);
+  }
+
   override readonly platform: Platform = Platform.LINKEDIN_PAGE;
   override readonly slug: string = "linkedin-page";
   override readonly label: string = "LinkedIn Page";

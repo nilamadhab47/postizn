@@ -5,6 +5,7 @@ import { mediaKind, cleanAltText } from "@postn/shared";
 import { BaseProvider, type AuthResult, type PublishInput, type UploadInput } from "./base-provider";
 import type { ChannelPlan } from "../channel-catalog";
 import { expiryFromSeconds, hasKey } from "./pkce";
+import { StorageService } from "../../storage/storage.service";
 import { fetchRemoteFile, firstKind, itemsFromPublish } from "./fetch-media";
 
 const AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization";
@@ -32,7 +33,10 @@ export class LinkedinProvider extends BaseProvider {
   readonly connectMode = "oauth" as const;
   readonly blurb: string = "Personal profile. Free.";
 
-  constructor(protected readonly config: ConfigService) {
+  constructor(
+    protected readonly config: ConfigService,
+    protected readonly storage: StorageService,
+  ) {
     super();
   }
 
@@ -194,7 +198,7 @@ export class LinkedinProvider extends BaseProvider {
       throw new Error("LinkedIn image init returned no upload URL");
     }
 
-    const img = await fetchRemoteFile(imageUrl);
+    const img = await fetchRemoteFile(imageUrl, this.storage);
     const contentType = img.mimeType || "application/octet-stream";
 
     const putRes = await fetch(uploadUrl, {
@@ -217,7 +221,7 @@ export class LinkedinProvider extends BaseProvider {
     platformId: string,
     videoUrl: string,
   ) {
-    const file = await fetchRemoteFile(videoUrl);
+    const file = await fetchRemoteFile(videoUrl, this.storage);
     const initRes = await fetch(`${VIDEOS_URL}?action=initializeUpload`, {
       method: "POST",
       headers: this.restHeaders(accessToken),

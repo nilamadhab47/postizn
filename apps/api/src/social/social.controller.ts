@@ -13,6 +13,7 @@ import type { Response } from "express";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser, type JwtUser } from "../auth/current-user.decorator";
 import { SocialService } from "./social.service";
+import { ConnectTokenDto, TestPublishDto } from "./dto/connect-token.dto";
 
 @Controller("social")
 export class SocialController {
@@ -40,7 +41,7 @@ export class SocialController {
   connectToken(
     @CurrentUser() user: JwtUser,
     @Param("platform") platform: string,
-    @Body() body: { fields?: Record<string, string> },
+    @Body() body: ConnectTokenDto,
   ) {
     return this.social.connectToken(user.userId, platform, body.fields ?? {});
   }
@@ -69,7 +70,7 @@ export class SocialController {
   testPublish(
     @CurrentUser() user: JwtUser,
     @Param("id") id: string,
-    @Body() body: { content?: string },
+    @Body() body: TestPublishDto,
   ) {
     return this.social.testPublish(user.userId, id, body.content);
   }

@@ -7,7 +7,6 @@ import { randomUUID } from "node:crypto";
 import convertHeic from "heic-convert";
 import {
   MAX_VIDEO_BYTES,
-  guessMimeFromUrl,
   looksLikeHeic,
   maxBytesForKind,
   mediaKind,
@@ -20,6 +19,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { EntitlementsService } from "../plan/entitlements.service";
 import { bakeDerivedJpeg } from "./derive-image";
+import { assertAllowedUploadMime, sniffUploadMime } from "./sniff-upload";
 
 const EXT: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -66,8 +66,17 @@ export class MediaService {
     if (!match) {
       throw new BadRequestException("That image is not a usable data URL");
     }
-    const mimeType = match[1];
+    const claimed = match[1];
     const buffer = Buffer.from(match[2], "base64");
+    let mimeType: string;
+    try {
+      mimeType = assertAllowedUploadMime(sniffUploadMime(buffer) ?? claimed);
+    } catch {
+      throw new BadRequestException("Use JPEG, PNG, WebP, HEIC, GIF, or MP4");
+    }
+    if (mimeType === "image/heic") {
+      throw new BadRequestException("Convert that iPhone photo before uploading");
+    }
     return this.save(userId, buffer, mimeType, fileName || `generated.${EXT[mimeType] ?? "png"}`, buffer.length);
   }
 
@@ -145,26 +154,7 @@ export class MediaService {
   }
 
   async hydrate(userId: string, urls: string[]): Promise<MediaRef[]> {
-    if (!urls.length) return [];
-    const rows = await this.prisma.media.findMany({
-      where: { userId, url: { in: urls } },
-      select: {
-        id: true,
-        url: true,
-        mimeType: true,
-        bytes: true,
-        parentId: true,
-        parent: { select: { id: true, url: true } },
-      },
-    });
-    const byUrl = new Map(rows.map((row) => [row.url, row]));
-    return urls.map((url) => {
-      const row = byUrl.get(url);
-      if (!row) {
-        return { url, mimeType: guessMimeFromUrl(url), bytes: 0 };
-      }
-      return toRef(row);
-    });
+    return this.ownedForUser(userId, urls);
   }
 
   private async findOriginal(userId: string, source: { id?: string; url?: string }) {
@@ -238,10 +228,17 @@ async function prepareUpload(file: {
   originalname: string;
   size: number;
 }) {
-  if (!looksLikeHeic(file.mimetype, file.originalname, file.buffer)) {
+  const sniffed = sniffUploadMime(file.buffer);
+  if (!looksLikeHeic(file.mimetype, file.originalname, file.buffer) && sniffed !== "image/heic") {
+    let mimeType: string;
+    try {
+      mimeType = assertAllowedUploadMime(sniffed);
+    } catch {
+      throw new BadRequestException("Use JPEG, PNG, WebP, HEIC, GIF, or MP4");
+    }
     return {
       buffer: file.buffer,
-      mimeType: file.mimetype,
+      mimeType,
       fileName: file.originalname,
       bytes: file.size || file.buffer.length,
     };

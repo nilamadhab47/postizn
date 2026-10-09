@@ -1,47 +1,48 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
 import type { Platform } from "@prisma/client";
+import { REDIS, type RedisClient } from "../redis/redis.module";
 
-type PendingOauth = {
+export type PendingOauth = {
   userId: string;
   platform: Platform;
   codeVerifier: string;
-  expiresAt: number;
 };
 
-const TTL_MS = 10 * 60 * 1000;
+const TTL_SEC = 10 * 60;
+const PREFIX = "postn:oauth:social:";
 
 @Injectable()
 export class OauthStateStore {
-  private readonly pending = new Map<string, PendingOauth>();
+  constructor(@Inject(REDIS) private readonly redis: RedisClient) {}
 
-  create(userId: string, platform: Platform, codeVerifier: string) {
-    this.sweep();
+  async create(userId: string, platform: Platform, codeVerifier: string) {
     const state = randomBytes(24).toString("base64url");
-    this.pending.set(state, {
-      userId,
-      platform,
-      codeVerifier,
-      expiresAt: Date.now() + TTL_MS,
-    });
+    await this.redis.set(
+      PREFIX + state,
+      JSON.stringify({ userId, platform, codeVerifier }),
+      "EX",
+      TTL_SEC,
+    );
     return state;
   }
 
-  take(state: string) {
-    const row = this.pending.get(state);
-    this.pending.delete(state);
-    if (!row || row.expiresAt < Date.now()) {
+  async take(state: string) {
+    if (!state || state.length > 128) return null;
+    const raw = await this.redis.getdel(PREFIX + state);
+    return parseSocialOauth(raw);
+  }
+}
+
+export function parseSocialOauth(raw: string | null): PendingOauth | null {
+  if (!raw) return null;
+  try {
+    const row = JSON.parse(raw) as PendingOauth;
+    if (!row?.userId || !row.platform || typeof row.codeVerifier !== "string") {
       return null;
     }
     return row;
-  }
-
-  private sweep() {
-    const now = Date.now();
-    for (const [key, row] of this.pending) {
-      if (row.expiresAt < now) {
-        this.pending.delete(key);
-      }
-    }
+  } catch {
+    return null;
   }
 }

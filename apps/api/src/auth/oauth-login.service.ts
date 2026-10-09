@@ -45,13 +45,13 @@ export class OauthLoginService {
     };
   }
 
-  authorizeUrl(provider: LoginOauthProvider) {
+  async authorizeUrl(provider: LoginOauthProvider) {
     if (!this.isConfigured(provider)) {
       return this.failUrl("not_configured");
     }
 
     const codeVerifier = provider === "twitter" ? newCodeVerifier() : "";
-    const state = this.oauthState.create(provider, codeVerifier);
+    const state = await this.oauthState.create(provider, codeVerifier);
     if (provider === "google") return this.googleAuthorizeUrl(state);
     if (provider === "linkedin") return this.linkedinAuthorizeUrl(state);
     return this.twitterAuthorizeUrl(state, codeVerifier);
@@ -72,7 +72,7 @@ export class OauthLoginService {
       return { kind: "error", url: this.failUrl("missing") };
     }
 
-    const pending = this.oauthState.take(input.state);
+    const pending = await this.oauthState.take(input.state);
     if (!pending || pending.provider !== provider) {
       return { kind: "error", url: this.failUrl("expired") };
     }

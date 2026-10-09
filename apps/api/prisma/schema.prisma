@@ -57,6 +57,7 @@ model User {
   postsTodayResetAt DateTime?
   imageGensUsed     Int       @default(0)
   aiCallsUsed       Int       @default(0)
+  sessionVersion    Int       @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

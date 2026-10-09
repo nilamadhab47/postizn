@@ -1,9 +1,12 @@
 import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Post, Req, UseGuards } from "@nestjs/common";
 import type { RawBodyRequest } from "@nestjs/common";
 import type { Request } from "express";
+import { Throttle } from "@nestjs/throttler";
 import { CurrentUser, type JwtUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { BillingService } from "./billing.service";
+import { CheckoutDto } from "./dto/checkout.dto";
+import { VerifyPaymentDto } from "./dto/verify-payment.dto";
 
 @Controller("billing")
 export class BillingController {
@@ -22,31 +25,22 @@ export class BillingController {
 
   @Post("checkout")
   @UseGuards(JwtAuthGuard)
-  checkout(
-    @CurrentUser() user: JwtUser,
-    @Body() body: { plan?: string; interval?: string },
-  ) {
-    return this.billing.createCheckout(user.userId, body.plan ?? "", body.interval ?? "");
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  checkout(@CurrentUser() user: JwtUser, @Body() body: CheckoutDto) {
+    return this.billing.createCheckout(user.userId, body.plan, body.interval);
   }
 
   @Post("verify")
   @UseGuards(JwtAuthGuard)
-  verify(
-    @CurrentUser() user: JwtUser,
-    @Body()
-    body: {
-      razorpay_order_id?: string;
-      razorpay_subscription_id?: string;
-      razorpay_payment_id?: string;
-      razorpay_signature?: string;
-    },
-  ) {
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  verify(@CurrentUser() user: JwtUser, @Body() body: VerifyPaymentDto) {
     return this.billing.verifyPayment(user.userId, body);
   }
 
   /** Provider-facing. Signature check lives in the PaymentProvider adapter. */
   @Post("webhook")
   @HttpCode(200)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   webhook(
     @Req() req: RawBodyRequest<Request>,
     @Headers() headers: Record<string, string | string[] | undefined>,

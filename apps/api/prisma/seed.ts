@@ -8,6 +8,9 @@ const PRO_EMAIL = "pro@postn.app";
 const SAMPLE_PASSWORD = "postn1234";
 
 async function main() {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Refusing to seed sample users in production.");
+  }
   const passwordHash = await bcrypt.hash(SAMPLE_PASSWORD, 12);
   await prisma.user.upsert({
     where: { email: SAMPLE_EMAIL },

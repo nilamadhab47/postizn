@@ -1,6 +1,9 @@
-import { Module } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
+import { Module, OnModuleInit } from "@nestjs/common";
+import { APP_GUARD } from "@nestjs/core";
+import { ConfigModule, ConfigService } from "@nestjs/config";
+import { ThrottlerGuard, ThrottlerModule, seconds } from "@nestjs/throttler";
 import { PrismaModule } from "./prisma/prisma.module";
+import { RedisModule } from "./redis/redis.module";
 import { AuthModule } from "./auth/auth.module";
 import { StorageModule } from "./storage/storage.module";
 import { SocialModule } from "./social/social.module";
@@ -14,6 +17,8 @@ import { PlanModule } from "./plan/plan.module";
 import { BillingModule } from "./billing/billing.module";
 import { MailModule } from "./mail/mail.module";
 import { HealthController } from "./health.controller";
+import { assertAppSecrets } from "./config/secrets";
+import { assertRedisUrl } from "./config/redis-url";
 
 @Module({
   imports: [
@@ -21,7 +26,11 @@ import { HealthController } from "./health.controller";
       isGlobal: true,
       envFilePath: [".env"],
     }),
+    ThrottlerModule.forRoot({
+      throttlers: [{ name: "default", ttl: seconds(60), limit: 120 }],
+    }),
     PrismaModule,
+    RedisModule,
     MailModule,
     PlanModule,
     BillingModule,
@@ -36,6 +45,16 @@ import { HealthController } from "./health.controller";
     WaitlistModule,
   ],
   controllers: [HealthController],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
-export class AppModule {}
+export class AppModule implements OnModuleInit {
+  constructor(private readonly config: ConfigService) {}
 
+  onModuleInit() {
+    assertAppSecrets({
+      JWT_SECRET: this.config.get<string>("JWT_SECRET") ?? "",
+      TOKEN_ENCRYPTION_KEY: this.config.get<string>("TOKEN_ENCRYPTION_KEY") ?? "",
+    });
+    assertRedisUrl(this.config.get<string>("REDIS_URL") ?? "");
+  }
+}

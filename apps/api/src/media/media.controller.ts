@@ -15,9 +15,11 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { memoryStorage } from "multer";
+import { mediaKind } from "@postn/shared";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser, type JwtUser } from "../auth/current-user.decorator";
 import { MediaService, UPLOAD_MAX_BYTES } from "./media.service";
+import { DeriveMediaDto, UploadDataUrlDto } from "./dto/media.dto";
 
 @Controller("media")
 @UseGuards(JwtAuthGuard)
@@ -32,15 +34,16 @@ export class MediaController {
   /** Bytes for canvas crop. Avoids R2 CORS tainting in the browser. */
   @Get("file")
   @Header("Cache-Control", "private, max-age=120")
-  async file(
-    @CurrentUser() user: JwtUser,
-    @Query("url") url: string,
-  ) {
+  async file(@CurrentUser() user: JwtUser, @Query("url") url: string) {
     if (!url?.trim()) {
       throw new BadRequestException("Missing file url");
     }
     const { body, mimeType } = await this.media.loadOwned(user.userId, url.trim());
-    return new StreamableFile(body, { type: mimeType, disposition: "inline" });
+    const kind = mediaKind(mimeType);
+    return new StreamableFile(body, {
+      type: mimeType,
+      disposition: kind === "image" || kind === "gif" ? "inline" : "attachment",
+    });
   }
 
   @Post()
@@ -62,28 +65,20 @@ export class MediaController {
   }
 
   @Post("data")
-  fromData(
-    @CurrentUser() user: JwtUser,
-    @Body() body: { dataUrl?: string; fileName?: string },
-  ) {
-    return this.media.uploadDataUrl(user.userId, body.dataUrl ?? "", body.fileName);
+  fromData(@CurrentUser() user: JwtUser, @Body() body: UploadDataUrlDto) {
+    return this.media.uploadDataUrl(user.userId, body.dataUrl, body.fileName);
   }
 
   @Post("derive")
-  derive(
-    @CurrentUser() user: JwtUser,
-    @Body() body: Record<string, unknown>,
-  ) {
-    const id = typeof body.id === "string" ? body.id : undefined;
-    const url = typeof body.url === "string" ? body.url : undefined;
-    return this.media.derive(user.userId, { id, url }, body);
+  derive(@CurrentUser() user: JwtUser, @Body() body: DeriveMediaDto) {
+    return this.media.derive(user.userId, { id: body.id, url: body.url }, body);
   }
 
   @Post(":id/derive")
   deriveById(
     @CurrentUser() user: JwtUser,
     @Param("id") id: string,
-    @Body() body: unknown,
+    @Body() body: DeriveMediaDto,
   ) {
     return this.media.derive(user.userId, { id }, body);
   }

@@ -1,14 +1,14 @@
 import {
+  Inject,
   Injectable,
   Logger,
   OnModuleDestroy,
   OnModuleInit,
 } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { PostStatus } from "@prisma/client";
 import { Queue } from "bullmq";
-import Redis from "ioredis";
 import { PrismaService } from "../prisma/prisma.service";
+import { REDIS, type RedisClient } from "../redis/redis.module";
 import {
   PUBLISH_JOB,
   PUBLISH_QUEUE,
@@ -18,15 +18,12 @@ import {
 @Injectable()
 export class PublishQueue implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger(PublishQueue.name);
-  readonly connection: Redis;
   readonly queue: Queue<PublishJobData>;
 
   constructor(
-    config: ConfigService,
+    @Inject(REDIS) readonly connection: RedisClient,
     private readonly prisma: PrismaService,
   ) {
-    const url = config.get<string>("REDIS_URL")?.trim() || "redis://localhost:6381";
-    this.connection = new Redis(url, { maxRetriesPerRequest: null });
     this.queue = new Queue<PublishJobData>(PUBLISH_QUEUE, {
       connection: this.connection,
       defaultJobOptions: {

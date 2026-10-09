@@ -70,6 +70,29 @@ export class StorageService implements OnModuleInit {
     return this.publicUrl ? `${this.publicUrl}/${key}` : key;
   }
 
+  allowedFetchHosts() {
+    if (!this.publicUrl) return [];
+    try {
+      return [new URL(this.publicUrl).hostname.toLowerCase()];
+    } catch {
+      return [];
+    }
+  }
+
+  keyFromPublicUrl(url: string) {
+    if (!this.publicUrl) return null;
+    const base = this.publicUrl.replace(/\/+$/, "");
+    if (!url.startsWith(`${base}/`)) return null;
+    return decodeURIComponent(url.slice(base.length + 1).split("?")[0] ?? "");
+  }
+
+  async loadOwnedObject(url: string) {
+    const key = this.keyFromPublicUrl(url);
+    if (!key || !this.client) return null;
+    const buffer = await this.getObject(key);
+    return { buffer, mimeType: "application/octet-stream" };
+  }
+
   async putObject(name: string, body: Buffer, contentType: string) {
     if (!this.client || !this.bucket) {
       throw new Error("R2 is not configured");

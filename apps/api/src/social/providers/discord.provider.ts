@@ -3,10 +3,15 @@ import { Platform } from "@prisma/client";
 import { MAX_DISCORD_FILE_BYTES, mediaKind } from "@postn/shared";
 import type { AuthResult, PublishInput } from "./base-provider";
 import { TokenProvider, field, readJson } from "./token-provider";
+import { StorageService } from "../../storage/storage.service";
 import { fetchRemoteFile, itemsFromPublish } from "./fetch-media";
 
 @Injectable()
 export class DiscordProvider extends TokenProvider {
+  constructor(private readonly storage: StorageService) {
+    super();
+  }
+
   readonly platform = Platform.DISCORD;
   readonly slug = "discord";
   readonly label = "Discord";
@@ -53,7 +58,7 @@ export class DiscordProvider extends TokenProvider {
       if (video.bytes > MAX_DISCORD_FILE_BYTES) {
         throw new Error("Discord webhooks only take files under 25 MB");
       }
-      const file = await fetchRemoteFile(video.url);
+      const file = await fetchRemoteFile(video.url, this.storage);
       if (file.buffer.length > MAX_DISCORD_FILE_BYTES) {
         throw new Error("Discord webhooks only take files under 25 MB");
       }

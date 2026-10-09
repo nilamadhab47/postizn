@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError, type Me } from "@/lib/api";
 import { identifyUser, track } from "@/lib/analytics";
-import { SAMPLE_ACCOUNT } from "@/lib/sample-account";
+import { SAMPLE_ACCOUNT, SHOW_SAMPLE_ACCOUNT } from "@/lib/sample-account";
 
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter();
@@ -128,7 +128,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             placeholder="Repeat password"
           />
         </label>
-      ) : (
+      ) : SHOW_SAMPLE_ACCOUNT ? (
         <button
           type="button"
           onClick={fillSample}
@@ -136,7 +136,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         >
           Sample account: {SAMPLE_ACCOUNT.email} / {SAMPLE_ACCOUNT.password}
         </button>
-      )}
+      ) : null}
       {error ? <p className="text-sm text-red-400">{error}</p> : null}
       <button
         type="submit"

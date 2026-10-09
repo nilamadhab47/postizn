@@ -1,46 +1,53 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
+import { REDIS, type RedisClient } from "../redis/redis.module";
 
 export type LoginOauthProvider = "google" | "linkedin" | "twitter";
 
-type PendingLoginOauth = {
+export type PendingLoginOauth = {
   provider: LoginOauthProvider;
   codeVerifier: string;
-  expiresAt: number;
 };
 
-const TTL_MS = 10 * 60 * 1000;
+const TTL_SEC = 10 * 60;
+const PREFIX = "postn:oauth:login:";
 
 @Injectable()
 export class LoginOauthStateStore {
-  private readonly pending = new Map<string, PendingLoginOauth>();
+  constructor(@Inject(REDIS) private readonly redis: RedisClient) {}
 
-  create(provider: LoginOauthProvider, codeVerifier: string) {
-    this.sweep();
+  async create(provider: LoginOauthProvider, codeVerifier: string) {
     const state = randomBytes(24).toString("base64url");
-    this.pending.set(state, {
-      provider,
-      codeVerifier,
-      expiresAt: Date.now() + TTL_MS,
-    });
+    await this.redis.set(
+      PREFIX + state,
+      JSON.stringify({ provider, codeVerifier }),
+      "EX",
+      TTL_SEC,
+    );
     return state;
   }
 
-  take(state: string) {
-    const row = this.pending.get(state);
-    this.pending.delete(state);
-    if (!row || row.expiresAt < Date.now()) {
+  async take(state: string) {
+    if (!state || state.length > 128) return null;
+    const raw = await this.redis.getdel(PREFIX + state);
+    return parseLoginOauth(raw);
+  }
+}
+
+export function parseLoginOauth(raw: string | null): PendingLoginOauth | null {
+  if (!raw) return null;
+  try {
+    const row = JSON.parse(raw) as PendingLoginOauth;
+    if (
+      (row.provider !== "google" &&
+        row.provider !== "linkedin" &&
+        row.provider !== "twitter") ||
+      typeof row.codeVerifier !== "string"
+    ) {
       return null;
     }
     return row;
-  }
-
-  private sweep() {
-    const now = Date.now();
-    for (const [key, row] of this.pending) {
-      if (row.expiresAt < now) {
-        this.pending.delete(key);
-      }
-    }
+  } catch {
+    return null;
   }
 }

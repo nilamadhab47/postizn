@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { Platform } from "@prisma/client";
 import { cleanAltText, type MediaRef, xReplySettingsApi } from "@postn/shared";
 import { BaseProvider, type AuthResult, type PublishInput, type UploadInput } from "./base-provider";
+import { StorageService } from "../../storage/storage.service";
 import { fetchRemoteFile, firstKind, itemsFromPublish } from "./fetch-media";
 import { challenge, expiryFromSeconds, hasKey } from "./pkce";
 
@@ -30,7 +31,10 @@ export class TwitterProvider extends BaseProvider {
   readonly blurb = "Personal account. Free.";
   private readonly log = new Logger(TwitterProvider.name);
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly storage: StorageService,
+  ) {
     super();
   }
 
@@ -126,7 +130,7 @@ export class TwitterProvider extends BaseProvider {
     accessToken: string,
     item: MediaRef,
   ): Promise<string | null> {
-    const file = await fetchRemoteFile(item.url);
+    const file = await fetchRemoteFile(item.url, this.storage);
     const imgBuf = file.buffer;
     const contentType = file.mimeType || item.mimeType || "image/jpeg";
     const mediaCategory = categoryFor(contentType);

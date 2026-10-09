@@ -9,7 +9,6 @@ import { ConfigService } from "@nestjs/config";
 import { createHmac, timingSafeEqual } from "crypto";
 import Razorpay from "razorpay";
 import type { BillingInterval, PaidPlanId } from "@postn/shared";
-import { isBillingInterval, isPaidPlan } from "@postn/shared";
 import type {
   CheckoutInput,
   CheckoutSession,
@@ -187,11 +186,7 @@ export class RazorpayPaymentProvider implements PaymentProvider {
     const paymentNotes = notesOf(payment?.notes);
     const merged = { ...paymentNotes, ...notes };
     const checkoutId = merged.checkoutId || undefined;
-    const userId = merged.userId || undefined;
-    const plan = merged.plan && isPaidPlan(merged.plan) ? merged.plan : undefined;
-    const interval =
-      merged.interval && isBillingInterval(merged.interval) ? merged.interval : undefined;
-    const periodEndAt = unixToDate(sub?.current_end) ?? periodEnd(interval);
+    const periodEndAt = unixToDate(sub?.current_end) ?? periodEnd();
 
     if (parsed.event === "subscription.activated" || parsed.event === "subscription.charged") {
       const providerEventId = payment?.id || eventId;
@@ -201,9 +196,6 @@ export class RazorpayPaymentProvider implements PaymentProvider {
           providerEventId,
           type: parsed.event === "subscription.charged" ? "subscription.renewed" : "subscription.activated",
           checkoutId,
-          userId,
-          plan,
-          interval,
           providerSubscriptionId: sub?.id,
           providerCustomerId: sub?.customer_id ?? undefined,
           currentPeriodEnd: periodEndAt,
@@ -219,7 +211,6 @@ export class RazorpayPaymentProvider implements PaymentProvider {
           providerEventId: eventId || `ended_${sub?.id}`,
           type: parsed.event === "subscription.completed" ? "subscription.expired" : "subscription.canceled",
           checkoutId,
-          userId,
           providerSubscriptionId: sub?.id,
           payload: parsed,
         },
@@ -237,7 +228,6 @@ export class RazorpayPaymentProvider implements PaymentProvider {
           providerEventId: payment?.id || eventId,
           type: "payment.failed",
           checkoutId,
-          userId,
           providerSubscriptionId: sub?.id,
           payload: parsed,
         },
@@ -250,9 +240,6 @@ export class RazorpayPaymentProvider implements PaymentProvider {
           providerEventId: payment.id,
           type: sub?.id || payment.subscription_id ? "subscription.activated" : "checkout.completed",
           checkoutId,
-          userId,
-          plan,
-          interval,
           providerSubscriptionId: sub?.id || payment.subscription_id,
           currentPeriodEnd: periodEndAt,
           payload: parsed,

@@ -11,11 +11,9 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CurrentUser, type JwtUser } from "../auth/current-user.decorator";
-import {
-  PostsService,
-  type CreatePostInput,
-  type UpdatePostInput,
-} from "./posts.service";
+import { PostsService, type CreatePostInput } from "./posts.service";
+import { SavePostDto } from "./dto/save-post.dto";
+import { RetryPostDto } from "./dto/retry-post.dto";
 
 @Controller("posts")
 @UseGuards(JwtAuthGuard)
@@ -33,17 +31,17 @@ export class PostsController {
   }
 
   @Post()
-  create(@CurrentUser() user: JwtUser, @Body() body: CreatePostInput) {
-    return this.posts.create(user.userId, body);
+  create(@CurrentUser() user: JwtUser, @Body() body: SavePostDto) {
+    return this.posts.create(user.userId, body as CreatePostInput);
   }
 
   @Post(":id/retry")
   retry(
     @CurrentUser() user: JwtUser,
     @Param("id") id: string,
-    @Body() body: { platform?: string },
+    @Body() body: RetryPostDto,
   ) {
-    return this.posts.retry(user.userId, id, body?.platform);
+    return this.posts.retry(user.userId, id, body.platform);
   }
 
   @Post(":id/cancel")
@@ -55,9 +53,9 @@ export class PostsController {
   update(
     @CurrentUser() user: JwtUser,
     @Param("id") id: string,
-    @Body() body: UpdatePostInput,
+    @Body() body: SavePostDto,
   ) {
-    return this.posts.update(user.userId, id, body);
+    return this.posts.update(user.userId, id, body as CreatePostInput);
   }
 
   @Delete(":id")

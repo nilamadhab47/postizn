@@ -6,9 +6,18 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Platform, type SocialAccount } from "@prisma/client";
+import type { SocialAccount } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { decryptSecret, encryptSecret, keyFromSecret } from "./token-crypto";
+import {
+  decryptSecretWithKeys,
+  encryptSecret,
+  keyFromSecret,
+} from "./token-crypto";
+import { publicAccount } from "./public-account";
+import {
+  allowPlaintextSecrets,
+  tokenEncryptionSecretFrom,
+} from "../config/secrets";
 import { OauthStateStore } from "./oauth-state.store";
 import { ProviderRegistry } from "./providers/provider.registry";
 import { newCodeVerifier } from "./providers/pkce";
@@ -57,7 +66,7 @@ export class SocialService {
     }
 
     const codeVerifier = newCodeVerifier();
-    const state = this.oauthState.create(userId, provider.platform, codeVerifier);
+    const state = await this.oauthState.create(userId, provider.platform, codeVerifier);
     const url = provider.createAuthUrl({
       state,
       codeVerifier,
@@ -130,14 +139,24 @@ export class SocialService {
     if (!provider) {
       throw new Error("Unknown platform");
     }
-    const accessToken = decryptSecret(ready.accessToken, this.cryptoKey());
+    const access = this.openSecret(ready.accessToken);
+    const refresh = ready.refreshToken
+      ? this.openSecret(ready.refreshToken)
+      : null;
     const mediaUrls = media.map((item) => item.url);
+    await this.persistRotatedSecrets(
+      ready,
+      access.plain,
+      refresh?.plain ?? null,
+      access.rotated,
+      Boolean(refresh?.rotated),
+    );
     return provider.publishPost({
       content,
       mediaUrls,
       media,
       settings,
-      accessToken,
+      accessToken: access.plain,
       platformId: ready.platformId,
     });
   }
@@ -158,9 +177,9 @@ export class SocialService {
       throw new Error("Reconnect this channel — the login expired");
     }
     const key = this.cryptoKey();
-    const refresh = decryptSecret(account.refreshToken, key);
+    const refresh = this.openSecret(account.refreshToken);
     try {
-      const next = await provider.refreshToken(refresh);
+      const next = await provider.refreshToken(refresh.plain);
       return this.prisma.socialAccount.update({
         where: { id: account.id },
         data: {
@@ -184,7 +203,7 @@ export class SocialService {
       return this.accountsRedirect("missing_code", slug);
     }
 
-    const pending = this.oauthState.take(state);
+    const pending = await this.oauthState.take(state);
     if (!pending || pending.platform !== provider.platform) {
       return this.accountsRedirect("expired_state", slug);
     }
@@ -202,7 +221,7 @@ export class SocialService {
       this.log.warn(`${slug} oauth failed: ${message}`);
       if (message === "NO_PAGE") return this.accountsRedirect("no_page", slug);
       if (message === "SCOPE_DENIED") return this.accountsRedirect("scope_denied", slug);
-      return this.accountsRedirect("oauth_failed", slug, message);
+      return this.accountsRedirect("oauth_failed", slug);
     }
   }
 
@@ -215,23 +234,6 @@ export class SocialService {
     }
     await this.prisma.socialAccount.delete({ where: { id: account.id } });
     return { ok: true };
-  }
-
-  async decryptedTokens(accountId: string) {
-    const account = await this.prisma.socialAccount.findUnique({
-      where: { id: accountId },
-    });
-    if (!account) {
-      throw new NotFoundException("Channel not found");
-    }
-    const key = this.cryptoKey();
-    return {
-      account,
-      accessToken: decryptSecret(account.accessToken, key),
-      refreshToken: account.refreshToken
-        ? decryptSecret(account.refreshToken, key)
-        : null,
-    };
   }
 
   private async buildCatalog(userId: string) {
@@ -397,36 +399,48 @@ export class SocialService {
   }
 
   private cryptoKey() {
-    const secret =
-      this.config.get<string>("TOKEN_ENCRYPTION_KEY")?.trim() ||
-      this.config.get<string>("JWT_SECRET") ||
-      "dev-only-change-me";
-    return keyFromSecret(secret);
+    return keyFromSecret(tokenEncryptionSecretFrom(this.config));
   }
-}
 
-function publicAccount(row: {
-  id: string;
-  platform: Platform;
-  platformId: string;
-  username: string | null;
-  displayName: string | null;
-  avatar: string | null;
-  isActive: boolean;
-  isMock?: boolean;
-  pausedByPlan?: boolean;
-}) {
-  return {
-    id: row.id,
-    platform: row.platform,
-    platformId: row.platformId,
-    username: row.username,
-    displayName: row.displayName,
-    avatar: row.avatar,
-    isActive: row.isActive,
-    isMock: Boolean(row.isMock),
-    pausedByPlan: Boolean(row.pausedByPlan),
-  };
+  private decryptKeys() {
+    const keys = [this.cryptoKey()];
+    const jwt = this.config.get<string>("JWT_SECRET")?.trim();
+    if (jwt) {
+      const legacy = keyFromSecret(jwt);
+      if (!legacy.equals(keys[0])) keys.push(legacy);
+    }
+    return keys;
+  }
+
+  private openSecret(value: string) {
+    return decryptSecretWithKeys(value, this.decryptKeys(), {
+      allowPlaintext: allowPlaintextSecrets(),
+    });
+  }
+
+  private async persistRotatedSecrets(
+    account: SocialAccount,
+    accessToken: string,
+    refreshToken: string | null,
+    rotatedAccess: boolean,
+    rotatedRefresh: boolean,
+  ) {
+    if (!rotatedAccess && !rotatedRefresh) return;
+    const key = this.cryptoKey();
+    await this.prisma.socialAccount.update({
+      where: { id: account.id },
+      data: {
+        accessToken: encryptSecret(accessToken, key),
+        ...(rotatedRefresh
+          ? {
+              refreshToken: refreshToken
+                ? encryptSecret(refreshToken, key)
+                : null,
+            }
+          : {}),
+      },
+    });
+  }
 }
 
 function mockProfile(

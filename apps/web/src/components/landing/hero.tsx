@@ -120,8 +120,8 @@ function QuestionCopy() {
         transition={{ duration: 0.6, delay: 1.35, ease: "easeOut" }}
         className="mt-7 max-w-2xl text-lg font-medium text-foreground/75 md:text-2xl"
       >
-        Copy. Paste. Reformat. Repeat — for every platform your audience lives
-        on. There&apos;s a better way, and you&apos;re scrolling toward it.
+        Copy. Paste. Reformat. Repeat — LinkedIn, X, even the email list.
+        There&apos;s a better way, and you&apos;re scrolling toward it.
       </motion.p>
     </>
   );

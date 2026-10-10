@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Check } from "lucide-react";
 import { CONTACT_EMAIL } from "@/lib/site";
-import { CHECKOUT_TRUST, PLANS, type BillingCycle } from "@/lib/pricing";
+import { CHECKOUT_TRUST, PLANS, PROMO_CODES, type BillingCycle } from "@/lib/pricing";
 import { GlowCard, Reveal } from "./motion-bits";
 
 export function Pricing({ waitlistMode }: { waitlistMode: boolean }) {
@@ -23,8 +23,8 @@ export function Pricing({ waitlistMode }: { waitlistMode: boolean }) {
         </h2>
         <p className="mx-auto mt-5 max-w-2xl text-base text-muted">
           Fourteen days on LinkedIn and X, no card. Then one composer for Slack,
-          Telegram, Discord, Pages, and Dev.to — ₹999 on paper, ₹799 while we
-          launch.
+          Telegram, Discord, Pages, Dev.to, and Newsletter — ₹999 on paper,
+          ₹799 while we launch.
         </p>
       </Reveal>
 
@@ -121,7 +121,34 @@ export function Pricing({ waitlistMode }: { waitlistMode: boolean }) {
           );
         })}
       </div>
-      <p className="mx-auto mt-10 max-w-xl text-center text-sm text-muted">
+      <Reveal delay={0.12} className="mx-auto mt-10 max-w-2xl">
+        <div className="rounded-2xl border border-accent/40 bg-card/70 p-5 text-center">
+          <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-accent">
+            Have a code?
+          </p>
+          <p className="mt-2 text-sm text-muted">
+            Apply it in Settings after you sign in. Works only if you have never
+            paid.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {PROMO_CODES.map((row) => (
+              <div
+                key={row.code}
+                className="rounded-xl border border-line/70 bg-background/60 px-4 py-3 text-left"
+              >
+                <p className="font-mono text-lg font-extrabold tracking-wide text-accent">
+                  {row.code}
+                </p>
+                <p className="mt-1 text-[11px] font-bold uppercase tracking-wide text-muted">
+                  {row.who}
+                </p>
+                <p className="mt-1 text-sm text-foreground/80">{row.what}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Reveal>
+      <p className="mx-auto mt-6 max-w-xl text-center text-sm text-muted">
         {CHECKOUT_TRUST}
       </p>
     </section>

@@ -28,7 +28,9 @@ export function JsonLd() {
         },
         featureList: [
           "Schedule posts in your timezone",
-          "Publish to LinkedIn, X, Telegram, Slack, Discord, Dev.to and more",
+          "Publish to LinkedIn, X, Telegram, Slack, Discord, Dev.to, Newsletter and more",
+          "LinkedIn first comment",
+          "Newsletter via your Resend audience",
           "AI drafts with Claude",
           "Per-channel live preview",
           "Reliable queue with retries",

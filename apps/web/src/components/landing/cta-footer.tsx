@@ -47,8 +47,8 @@ function CtaCopy({ waitlistMode }: { waitlistMode: boolean }) {
       </h2>
       <p className="mt-6 max-w-lg text-lg text-muted">
         {waitlistMode
-          ? "That globe isn't decoration — it's the roadmap. Drop your email. When we open, you get 14 days on LinkedIn and X — no card."
-          : "Stop rewriting the same update for every network. Start 14 days on LinkedIn and X — no card. A card unlocks Pro at ₹799/month."}
+          ? "That globe isn't decoration — it's the roadmap. Drop your email. When we open, you get 14 days on LinkedIn and X — no card. Codes POSTN30 and POSTNPRO stretch trial or unlock Pro."
+          : "Stop rewriting the same update for every network — including the newsletter. Start 14 days on LinkedIn and X — no card. Codes POSTN30 and POSTNPRO stretch trial or unlock Pro. A card is ₹799/month."}
       </p>
       <div className="mt-9 flex w-full justify-center lg:justify-start">
         {waitlistMode ? (
@@ -60,8 +60,8 @@ function CtaCopy({ waitlistMode }: { waitlistMode: boolean }) {
           </ShimmerButton>
         )}
       </div>
-      <div className="mt-10 flex items-center justify-center gap-3 lg:justify-start">
-        {["linkedin", "twitter", "telegram", "slack", "discord", "devto"].map(
+      <div className="mt-10 flex flex-wrap items-center justify-center gap-3 lg:justify-start">
+        {["linkedin", "twitter", "telegram", "slack", "discord", "devto", "newsletter"].map(
           (slug, i) => (
             <motion.div
               key={slug}

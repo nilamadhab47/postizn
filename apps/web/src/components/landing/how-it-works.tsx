@@ -9,13 +9,13 @@ const STEPS = [
     icon: Link2,
     step: "01",
     title: "Connect your channels",
-    body: "OAuth for LinkedIn and X, tokens for the rest. Two minutes and every channel you use is connected.",
+    body: "OAuth for LinkedIn and X. Tokens for Telegram, Slack, Discord, Dev.to. Resend key for Newsletter. Two minutes and every channel you use is connected.",
   },
   {
     icon: PenLine,
     step: "02",
     title: "Write once, tweak per feed",
-    body: "One draft with live previews. Let Claude shorten for X or draft the whole thing.",
+    body: "One draft with live previews. First comment on LinkedIn, subject on Newsletter. Claude shortens for X or drafts the whole thing.",
   },
   {
     icon: Rocket,

@@ -1,7 +1,7 @@
 export const SITE_NAME = "postN";
 export const SITE_TAGLINE = "Write once. Post everywhere.";
 export const SITE_DESCRIPTION =
-  "The social media scheduler for founders. Write once with AI, publish to LinkedIn, X, Telegram, Slack, Discord, Dev.to and more, and review everything on one calendar. No copy-paste, no tab-juggling.";
+  "The social media scheduler for founders. Write once with AI, publish to LinkedIn, X, Telegram, Slack, Discord, Dev.to, Newsletter and more, and review everything on one calendar. LinkedIn first comment included. No copy-paste, no tab-juggling.";
 export const SITE_KEYWORDS = [
   "social media scheduler",
   "cross-posting tool",
@@ -16,6 +16,8 @@ export const SITE_KEYWORDS = [
   "Slack",
   "Discord",
   "Dev.to",
+  "newsletter scheduler",
+  "LinkedIn first comment",
   "Buffer alternative",
   "founders",
   "postN",

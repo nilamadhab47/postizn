@@ -9,6 +9,7 @@ const CHANNELS = [
   { slug: "slack", label: "Slack" },
   { slug: "discord", label: "Discord" },
   { slug: "devto", label: "Dev.to" },
+  { slug: "newsletter", label: "Newsletter" },
   { slug: "instagram", label: "Instagram · soon" },
   { slug: "youtube", label: "YouTube · soon" },
   { slug: "whatsapp", label: "WhatsApp · soon" },

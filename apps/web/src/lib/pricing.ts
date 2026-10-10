@@ -22,6 +22,20 @@ export function inr(n: number) {
 export const CHECKOUT_TRUST =
   "postN never sees your card. Upgrade opens Razorpay Subscriptions — monthly and yearly renew on their own. Card works; UPI usually doesn’t.";
 
+/** Public tester codes. Redeem in Settings after sign-in. Unpaid accounts only. */
+export const PROMO_CODES = [
+  {
+    code: "POSTN30",
+    who: "On trial",
+    what: "Stretches the 14-day trial to 30 days",
+  },
+  {
+    code: "POSTNPRO",
+    who: "Trial ended",
+    what: "Unlocks Pro for 14 days, no card",
+  },
+] as const;
+
 export type BillingCycle = "monthly" | "yearly";
 
 export type PublicPlan = {
@@ -42,15 +56,16 @@ export const PLANS: PublicPlan[] = [
     id: "trial",
     name: "Trial",
     badge: "No card",
-    blurb: "LinkedIn and X for 14 days. One shot per account.",
+    blurb: "LinkedIn and X for 14 days. One shot per account. A code can stretch it.",
     href: "register",
     cta: { register: "Start 14-day trial", waitlist: "Join the waitlist" },
     monthly: { price: inr(0), period: "14 days" },
     yearly: { price: inr(0), period: "14 days" },
     points: [
-      "LinkedIn + X only",
+      "LinkedIn + X only · first comment on LinkedIn",
       "2 posts / day · 20 posts in the window",
       "3 images · 8 Claude writes",
+      "Code POSTN30 → 30-day trial",
     ],
   },
   {
@@ -72,7 +87,7 @@ export const PLANS: PublicPlan[] = [
       was: inr(PRO_LIST_YEARLY_INR),
     },
     points: [
-      "Every live channel · Page, Telegram, Slack, Discord, Dev.to and more",
+      "Every live channel · Page, Telegram, Slack, Discord, Dev.to, Newsletter",
       "8 posts / day · 150 / month",
       "20 images · 40 Claude writes / month",
     ],

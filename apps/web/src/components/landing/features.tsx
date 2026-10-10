@@ -8,6 +8,7 @@ import {
   Clock,
   Heart,
   ImagePlus,
+  Mail,
   MessageCircle,
   RefreshCw,
   Repeat2,
@@ -65,6 +66,17 @@ export function Features() {
           mock={<CalendarMock />}
         />
 
+        <BentoCard
+          color="#f4b183"
+          label="Compose"
+          icon={Mail}
+          title="First comment on LinkedIn. Email the same draft."
+          body="Drop an optional first comment after the LinkedIn post lands — the native “link in comments” line. Flip Newsletter and the same draft becomes a Resend broadcast: subject, preview, your audience. We don’t host the list."
+          className="lg:col-span-2"
+          layout="row"
+          mock={<ComposeExtrasMock />}
+        />
+
         {/* 2x2 grid */}
         <BentoCard
           color="#8b6cff"
@@ -87,7 +99,7 @@ export function Features() {
           label="Preview"
           icon={MessageCircle}
           title="See every feed before you post"
-          body="Real, platform-accurate previews for LinkedIn, X, Telegram, Slack, Discord and Dev.to — so you know exactly how each post will look."
+          body="Real, platform-accurate previews for LinkedIn, X, Telegram, Slack, Discord, Dev.to and Newsletter — so you know exactly how each post will look."
           mock={<PreviewMock />}
         />
         <BentoCard
@@ -217,6 +229,7 @@ function CalendarMock() {
     { day: 1, time: "1:00", slug: "twitter" },
     { day: 1, time: "7:50", slug: "telegram" },
     { day: 2, time: "2:15", slug: "slack" },
+    { day: 2, time: "4:00", slug: "newsletter" },
     { day: 3, time: "11:20", slug: "discord" },
     { day: 3, time: "6:40", slug: "devto" },
   ];
@@ -336,6 +349,40 @@ function ImageMock() {
   );
 }
 
+function ComposeExtrasMock() {
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      <Panel>
+        <div className="flex items-center gap-2">
+          <ChannelIcon slug="linkedin" className="size-5 rounded" />
+          <p className="text-[10px] font-extrabold uppercase tracking-wide text-muted">
+            LinkedIn · first comment
+          </p>
+        </div>
+        <p className="mt-2 rounded-lg border border-line/50 bg-background/50 px-2.5 py-2 text-[11px] leading-relaxed text-foreground/80">
+          Link in comments — the full case study is here.
+        </p>
+      </Panel>
+      <Panel>
+        <div className="flex items-center gap-2">
+          <ChannelIcon slug="newsletter" className="size-5 rounded" />
+          <p className="text-[10px] font-extrabold uppercase tracking-wide text-muted">
+            Newsletter · Resend
+          </p>
+        </div>
+        <p className="mt-2 text-[10px] font-bold text-muted">Subject</p>
+        <p className="mt-1 rounded-lg border border-line/50 bg-background/50 px-2.5 py-1.5 text-[11px] font-semibold text-foreground/85">
+          We shipped scheduled publishing
+        </p>
+        <p className="mt-2 text-[10px] font-bold text-muted">Preview</p>
+        <p className="mt-1 rounded-lg border border-line/50 bg-background/50 px-2.5 py-1.5 text-[11px] text-foreground/70">
+          One draft. Every feed — including your list.
+        </p>
+      </Panel>
+    </div>
+  );
+}
+
 function MiniPreview({
   slug,
   name,
@@ -371,7 +418,7 @@ function PreviewMock() {
   return (
     <div className="grid grid-cols-2 gap-2">
       <MiniPreview slug="twitter" name="Your Brand" handle="@yourbrand" />
-      <MiniPreview slug="linkedin" name="Your Brand" handle="your-brand" />
+      <MiniPreview slug="newsletter" name="Your list" handle="via Resend" />
     </div>
   );
 }
@@ -381,6 +428,7 @@ function QueueMock() {
     { slug: "linkedin", name: "LinkedIn", status: "Published", tone: "#5ee6a8" },
     { slug: "twitter", name: "X", status: "Published", tone: "#5ee6a8" },
     { slug: "telegram", name: "Telegram", status: "Scheduled", tone: "#ffb020" },
+    { slug: "newsletter", name: "Newsletter", status: "Scheduled", tone: "#ffb020" },
     { slug: "discord", name: "Discord", status: "Retrying", tone: "#ff6b4a" },
   ];
   return (
@@ -417,6 +465,7 @@ function NotifyMock() {
   const items: { slug: string; text: string; tone: string; ok: boolean }[] = [
     { slug: "linkedin", text: "Published to LinkedIn", tone: "#5ee6a8", ok: true },
     { slug: "twitter", text: "Published to X", tone: "#5ee6a8", ok: true },
+    { slug: "newsletter", text: "Broadcast sent via Resend", tone: "#5ee6a8", ok: true },
     { slug: "discord", text: "Discord failed · retrying", tone: "#ff6b4a", ok: false },
   ];
   return (

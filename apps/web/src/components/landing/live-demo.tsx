@@ -25,6 +25,7 @@ const ROWS: Row[] = [
   { platform: "SLACK", slug: "slack", label: "Slack", handle: "launch" },
   { platform: "DISCORD", slug: "discord", label: "Discord", handle: "updates" },
   { platform: "DEVTO", slug: "devto", label: "Dev.to", handle: "yourbrand" },
+  { platform: "NEWSLETTER", slug: "newsletter", label: "Newsletter", handle: "hello@yourbrand" },
 ];
 
 const ROUGH = "shipping scheduled publishing today. one draft, every feed, no more juggling tabs.";
@@ -142,6 +143,11 @@ export function ComposeDemo({ className = "" }: { className?: string }) {
       await moveTo(chipRefs.current.DISCORD);
       await click("DISCORD");
       setSelected((s) => ({ ...s, DISCORD: true }));
+      await sleep(220);
+
+      await moveTo(chipRefs.current.NEWSLETTER);
+      await click("NEWSLETTER");
+      setSelected((s) => ({ ...s, NEWSLETTER: true }));
       await sleep(360);
 
       // 2. Type a rough draft.

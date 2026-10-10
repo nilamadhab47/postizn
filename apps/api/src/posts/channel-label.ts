@@ -16,6 +16,8 @@ export function channelLabel(platform: Platform) {
       return "Slack";
     case Platform.DISCORD:
       return "Discord";
+    case Platform.NEWSLETTER:
+      return "Newsletter";
     default:
       return platform;
   }

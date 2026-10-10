@@ -22,6 +22,7 @@ enum Platform {
   DEVTO
   SLACK
   DISCORD
+  NEWSLETTER
 }
 
 enum PostStatus {
@@ -58,6 +59,7 @@ model User {
   imageGensUsed     Int       @default(0)
   aiCallsUsed       Int       @default(0)
   sessionVersion    Int       @default(0)
+  promoProEndsAt    DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -67,6 +69,7 @@ model User {
   notifications  Notification[]
   subscription   Subscription?
   checkouts      BillingCheckout[]
+  promoRedemptions PromoRedemption[]
 }
 
 model SocialAccount {
@@ -263,4 +266,32 @@ model Waitlist {
   id        String   @id @default(cuid())
   email     String   @unique
   createdAt DateTime @default(now())
+}
+
+enum PromoKind {
+  TRIAL_EXTEND
+  PRO_GRANT
+}
+
+model PromoCode {
+  id        String    @id @default(cuid())
+  code      String    @unique
+  kind      PromoKind
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+
+  redemptions PromoRedemption[]
+}
+
+model PromoRedemption {
+  id          String   @id @default(cuid())
+  userId      String
+  promoCodeId String
+  createdAt   DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  promoCode PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, promoCodeId])
+  @@index([userId])
 }

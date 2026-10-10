@@ -111,6 +111,7 @@ const PLACEHOLDERS: Record<string, string> = {
   SLACK: "Message for your Slack channel.",
   DISCORD: "Webhook message for Discord.",
   DEVTO: "First line is the title. Rest is the unpublished Dev.to article.",
+  NEWSLETTER: "Email body. Subject and preview sit under the Newsletter tab.",
 };
 
 const PREVIEW_TINT: Record<string, string> = {
@@ -121,6 +122,7 @@ const PREVIEW_TINT: Record<string, string> = {
   SLACK: "text-[#ecb22e]",
   DISCORD: "text-[#8ea1ff]",
   DEVTO: "text-[#f7df1e]",
+  NEWSLETTER: "text-[#f4b183]",
 };
 
 function isComposePlatform(value: string): value is ComposePlatform {

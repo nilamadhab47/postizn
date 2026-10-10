@@ -14,6 +14,7 @@ import {
   PLATFORM_CHAR_LIMITS,
   cleanAltText,
   cleanChannelSettings,
+  firstCommentPending,
   mediaBundleError,
   platformCharCount,
   type ChannelSettings,
@@ -37,6 +38,7 @@ const LIVE_PLATFORMS = new Set<Platform>([
   Platform.DEVTO,
   Platform.SLACK,
   Platform.DISCORD,
+  Platform.NEWSLETTER,
 ]);
 
 export type PostAction = "draft" | "schedule" | "now";
@@ -130,6 +132,13 @@ export class PostsService {
         throw new BadRequestException(
           `${channelLabel(platform)} is over ${limit.toLocaleString("en-IN")} characters`,
         );
+      }
+      if (
+        action !== "draft" &&
+        platform === Platform.NEWSLETTER &&
+        !settingsByPlatform[platform]?.subject
+      ) {
+        throw new BadRequestException("Add a subject on the Newsletter tab");
       }
     }
 
@@ -367,6 +376,13 @@ export class PostsService {
           `${channelLabel(platform)} is over ${limit.toLocaleString("en-IN")} characters`,
         );
       }
+      if (
+        effectiveAction !== "draft" &&
+        platform === Platform.NEWSLETTER &&
+        !settingsByPlatform[platform]?.subject
+      ) {
+        throw new BadRequestException("Add a subject on the Newsletter tab");
+      }
     }
 
     const unpublishedStatus =
@@ -495,12 +511,14 @@ export class PostsService {
     });
     if (!post) throw new NotFoundException("Post not found");
     const wanted = platform?.trim().toUpperCase();
-    const failed = post.targets.filter(
-      (target) =>
-        target.status === PostStatus.FAILED &&
-        !target.platformPostId &&
-        (!wanted || target.socialAccount.platform === wanted),
-    );
+    const failed = post.targets.filter((target) => {
+      if (target.status !== PostStatus.FAILED) return false;
+      if (wanted && target.socialAccount.platform !== wanted) return false;
+      if (!target.platformPostId) return true;
+      return firstCommentPending(
+        cleanChannelSettings(target.socialAccount.platform, target.settings),
+      );
+    });
     if (!failed.length) {
       throw new BadRequestException("Nothing failed on that post to retry");
     }
@@ -633,9 +651,14 @@ export class PostsService {
       this.log.warn(`publish skipped, draft ${postId}`);
       return this.present(post);
     }
-    const alreadyOut = post.targets.every(
-      (target) => target.status === PostStatus.PUBLISHED && target.platformPostId,
-    );
+    const alreadyOut = post.targets.every((target) => {
+      if (target.status !== PostStatus.PUBLISHED || !target.platformPostId) {
+        return false;
+      }
+      return !firstCommentPending(
+        cleanChannelSettings(target.socialAccount.platform, target.settings),
+      );
+    });
     if (alreadyOut) {
       return this.present(post);
     }
@@ -662,29 +685,51 @@ export class PostsService {
     const overrides = asOverrideMap(current.contentByPlatform);
 
     for (const target of current.targets) {
-      if (target.platformPostId || target.status === PostStatus.PUBLISHED) {
+      const settings = cleanChannelSettings(
+        target.socialAccount.platform,
+        target.settings,
+      );
+      const commentOpen = firstCommentPending(settings);
+      if (target.platformPostId && !commentOpen) {
         continue;
       }
       const body = (overrides[target.socialAccount.platform] ?? current.content).trim();
       try {
-        const urls = target.mediaUrls.length ? target.mediaUrls : current.mediaUrls;
-        const media = attachAlt(
-          await this.media.hydrate(current.userId, urls),
-          asOverrideMap(current.mediaAlt),
-        );
-        const result = await this.social.publishToAccount(
-          target.socialAccount,
-          body,
-          media,
-          cleanChannelSettings(target.socialAccount.platform, target.settings),
-        );
+        let platformPostId = target.platformPostId;
+        if (!platformPostId) {
+          const urls = target.mediaUrls.length ? target.mediaUrls : current.mediaUrls;
+          const media = attachAlt(
+            await this.media.hydrate(current.userId, urls),
+            asOverrideMap(current.mediaAlt),
+          );
+          const result = await this.social.publishToAccount(
+            target.socialAccount,
+            body,
+            media,
+            settings,
+          );
+          platformPostId = result.platformPostId;
+          await this.prisma.postTarget.update({
+            where: { id: target.id },
+            data: { platformPostId },
+          });
+        }
+        if (commentOpen && platformPostId && settings.firstComment) {
+          const commented = await this.social.commentOnAccount(
+            target.socialAccount,
+            platformPostId,
+            settings.firstComment,
+          );
+          settings.firstCommentId = commented.commentId;
+        }
         await this.prisma.postTarget.update({
           where: { id: target.id },
           data: {
             status: PostStatus.PUBLISHED,
-            platformPostId: result.platformPostId,
+            platformPostId,
             publishedAt: new Date(),
             failedReason: null,
+            settings: jsonSettings(settings),
           },
         });
       } catch (err) {
@@ -976,6 +1021,12 @@ export class PostsService {
     }
     for (const platform of platforms) {
       const cleaned = cleanChannelSettings(platform, raw[platform]);
+      delete cleaned.firstCommentId;
+      const current = existing?.targets.find(
+        (target) => target.socialAccount.platform === platform,
+      );
+      const prior = cleanChannelSettings(platform, current?.settings);
+      if (prior.firstCommentId) cleaned.firstCommentId = prior.firstCommentId;
       if (Object.keys(cleaned).length) next[platform] = cleaned;
     }
     return next;

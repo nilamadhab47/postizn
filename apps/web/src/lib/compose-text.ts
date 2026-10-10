@@ -68,6 +68,7 @@ export const PLATFORM_LIMITS = {
   SLACK: 40000,
   DISCORD: 2000,
   DEVTO: 100000,
+  NEWSLETTER: 100000,
 } as const;
 
 export type ComposePlatform = keyof typeof PLATFORM_LIMITS;

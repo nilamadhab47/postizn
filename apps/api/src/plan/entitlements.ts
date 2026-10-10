@@ -2,6 +2,8 @@ export type AccessId = "FREE" | "TRIAL" | "PRO" | "STUDIO";
 export type PlanId = "FREE" | "PRO" | "STUDIO";
 
 export const TRIAL_DAYS = 14;
+export const TRIAL_EXTENDED_DAYS = 30;
+export const PROMO_PRO_DAYS = 14;
 
 export const FREE_CHANNEL_LIMIT = 0;
 export const TRIAL_CHANNEL_LIMIT = 2;
@@ -43,6 +45,7 @@ export const PRO_CHANNEL_LABELS = [
   "Slack",
   "Discord",
   "Dev.to",
+  "Newsletter",
 ] as const;
 
 export type AccessCaps = {

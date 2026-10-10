@@ -45,6 +45,8 @@ export function PaywallHost() {
   const [info, setInfo] = useState<BillingMe | null>(null);
   const [busy, setBusy] = useState<PaidPlanId | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [coupon, setCoupon] = useState("");
+  const [couponBusy, setCouponBusy] = useState(false);
 
   useEffect(() => {
     if (!user || !lapsed) {
@@ -220,6 +222,41 @@ export function PaywallHost() {
             </button>
           </div>
           <p className="text-xs font-semibold text-muted">{CHECKOUT_TRUST}</p>
+          <div className="flex gap-2">
+            <input
+              value={coupon}
+              placeholder="Have a code?"
+              autoCapitalize="characters"
+              onChange={(event) => setCoupon(event.target.value)}
+              className="min-w-0 flex-1 rounded-lg border border-line bg-background px-3 py-2 text-sm"
+            />
+            <Button
+              variant="outline"
+              className="border-line bg-transparent hover:bg-card hover:text-foreground"
+              disabled={couponBusy || !coupon.trim()}
+              onClick={() => {
+                setCouponBusy(true);
+                setMessage(null);
+                void api<{ message: string }>("/billing/promo", {
+                  method: "POST",
+                  body: JSON.stringify({ code: coupon }),
+                })
+                  .then(async (result) => {
+                    setMessage(result.message);
+                    setCoupon("");
+                    await refresh();
+                  })
+                  .catch((err) => {
+                    setMessage(
+                      err instanceof ApiError ? err.message : "Could not apply that code",
+                    );
+                  })
+                  .finally(() => setCouponBusy(false));
+              }}
+            >
+              {couponBusy ? "Applying…" : "Apply"}
+            </Button>
+          </div>
           {message ? <p className="text-sm font-semibold text-accent">{message}</p> : null}
           <DialogFooter>
             <Button

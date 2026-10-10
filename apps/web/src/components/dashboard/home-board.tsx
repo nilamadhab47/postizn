@@ -156,8 +156,7 @@ export function HomeBoard() {
               {formatCount(data.publishedWeek.length)}
             </p>
             <p className="mt-1 text-sm font-semibold text-muted">
-              posts that actually went out. Likes and views wait until we wire
-              analytics.
+              posts that actually went out.
             </p>
 
             <Sparkline values={data.spark} />

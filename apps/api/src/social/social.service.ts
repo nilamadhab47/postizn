@@ -128,6 +128,34 @@ export class SocialService {
     media: { url: string; mimeType: string; bytes: number; alt?: string }[] = [],
     settings: ChannelSettings = {},
   ) {
+    const { ready, provider, accessToken } = await this.liveProvider(account);
+    return provider.publishPost({
+      content,
+      mediaUrls: media.map((item) => item.url),
+      media,
+      settings,
+      accessToken,
+      platformId: ready.platformId,
+      fromEmail: ready.username ?? undefined,
+      fromName: ready.displayName ?? undefined,
+    });
+  }
+
+  async commentOnAccount(account: SocialAccount, platformPostId: string, text: string) {
+    const { ready, provider, accessToken } = await this.liveProvider(account);
+    const result = await provider.commentOnPost({
+      accessToken,
+      platformId: ready.platformId,
+      platformPostId,
+      text,
+    });
+    if (!result) {
+      throw new Error("This channel cannot post a first comment");
+    }
+    return result;
+  }
+
+  private async liveProvider(account: SocialAccount) {
     if (account.pausedByPlan) {
       throw new Error(PAY_TO_USE);
     }
@@ -143,7 +171,6 @@ export class SocialService {
     const refresh = ready.refreshToken
       ? this.openSecret(ready.refreshToken)
       : null;
-    const mediaUrls = media.map((item) => item.url);
     await this.persistRotatedSecrets(
       ready,
       access.plain,
@@ -151,14 +178,7 @@ export class SocialService {
       access.rotated,
       Boolean(refresh?.rotated),
     );
-    return provider.publishPost({
-      content,
-      mediaUrls,
-      media,
-      settings,
-      accessToken: access.plain,
-      platformId: ready.platformId,
-    });
+    return { ready, provider, accessToken: access.plain };
   }
 
   private async ensureFreshAccount(account: SocialAccount): Promise<SocialAccount> {

@@ -7,6 +7,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { BillingService } from "./billing.service";
 import { CheckoutDto } from "./dto/checkout.dto";
 import { VerifyPaymentDto } from "./dto/verify-payment.dto";
+import { RedeemPromoDto } from "./dto/redeem-promo.dto";
 
 @Controller("billing")
 export class BillingController {
@@ -21,6 +22,13 @@ export class BillingController {
   @UseGuards(JwtAuthGuard)
   me(@CurrentUser() user: JwtUser) {
     return this.billing.status(user.userId);
+  }
+
+  @Post("promo")
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  promo(@CurrentUser() user: JwtUser, @Body() body: RedeemPromoDto) {
+    return this.billing.redeemPromo(user.userId, body.code);
   }
 
   @Post("checkout")

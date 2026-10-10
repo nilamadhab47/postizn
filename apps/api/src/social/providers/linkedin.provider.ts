@@ -7,6 +7,7 @@ import type { ChannelPlan } from "../channel-catalog";
 import { expiryFromSeconds, hasKey } from "./pkce";
 import { StorageService } from "../../storage/storage.service";
 import { fetchRemoteFile, firstKind, itemsFromPublish } from "./fetch-media";
+import { linkedInCommentBody, linkedInCommentUrl } from "./linkedin-comment";
 
 const AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization";
 const TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken";
@@ -167,6 +168,42 @@ export class LinkedinProvider extends BaseProvider {
 
     const postId = res.headers.get("x-restli-id") ?? `linkedin-${Date.now()}`;
     return { platformPostId: postId };
+  }
+
+  override async commentOnPost(input: {
+    accessToken: string;
+    platformId: string;
+    platformPostId: string;
+    text: string;
+  }) {
+    const text = input.text.trim();
+    if (!text) return null;
+    const actor = this.authorUrn(input.platformId);
+    const res = await fetch(linkedInCommentUrl(input.platformPostId), {
+      method: "POST",
+      headers: this.restHeaders(input.accessToken),
+      body: JSON.stringify(
+        linkedInCommentBody(actor, input.platformPostId, text),
+      ),
+    });
+    if (!res.ok) {
+      const raw = await res.text();
+      let detail = raw.slice(0, 220);
+      try {
+        const json = JSON.parse(raw) as { message?: string; errorDetail?: string };
+        detail = json.message || json.errorDetail || detail;
+      } catch {
+        /* keep raw */
+      }
+      throw new Error(`LinkedIn comment failed (${res.status}): ${detail}`);
+    }
+    const fromHeader = res.headers.get("x-restli-id")?.trim();
+    if (fromHeader) return { commentId: fromHeader };
+    const json = (await res.json().catch(() => ({}))) as {
+      id?: string;
+      object?: string;
+    };
+    return { commentId: json.id || json.object || "ok" };
   }
 
   private async uploadImage(

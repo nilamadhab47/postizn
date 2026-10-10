@@ -11,7 +11,8 @@ export type CalPlatform =
   | "TELEGRAM"
   | "DEVTO"
   | "SLACK"
-  | "DISCORD";
+  | "DISCORD"
+  | "NEWSLETTER";
 
 export type CalPost = {
   id: string;
@@ -64,6 +65,7 @@ const PLATFORMS = new Set<CalPlatform>([
   "DEVTO",
   "SLACK",
   "DISCORD",
+  "NEWSLETTER",
 ]);
 
 export async function fetchQueuePosts() {

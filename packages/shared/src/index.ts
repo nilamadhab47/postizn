@@ -11,6 +11,7 @@ export const PLATFORM_CHAR_LIMITS = {
   DEVTO: 100000,
   SLACK: 40000,
   DISCORD: 2000,
+  NEWSLETTER: 100000,
 } as const;
 
 export function platformCharCount(platform: keyof typeof PLATFORM_CHAR_LIMITS, text: string) {
@@ -32,7 +33,8 @@ export type Platform =
   | "TELEGRAM"
   | "DEVTO"
   | "SLACK"
-  | "DISCORD";
+  | "DISCORD"
+  | "NEWSLETTER";
 
 export type PostStatus =
   | "DRAFT"
@@ -109,11 +111,20 @@ export const MAX_DISCORD_FILE_BYTES = 25 * 1024 * 1024;
 export const MIN_VIDEO_SECONDS = 3;
 export const MAX_VIDEO_SECONDS = 140;
 export const MAX_ALT_TEXT = 1000;
+export const MAX_FIRST_COMMENT = 1250;
+export const MAX_NEWSLETTER_SUBJECT = 200;
+export const MAX_NEWSLETTER_PREVIEW = 150;
 
 export function cleanAltText(value?: string | null) {
   const text = (value ?? "").trim();
   if (!text) return undefined;
   return text.slice(0, MAX_ALT_TEXT);
+}
+
+export function cleanFirstComment(value?: string | null) {
+  const text = (value ?? "").trim();
+  if (!text) return undefined;
+  return text.slice(0, MAX_FIRST_COMMENT);
 }
 
 export type MediaKind = "image" | "gif" | "video";
@@ -188,6 +199,9 @@ export function mediaBundleError(
     items[0].bytes > MAX_DISCORD_FILE_BYTES
   ) {
     return "Discord webhooks only take files under 25 MB";
+  }
+  if (hasVideo && selected.has("NEWSLETTER")) {
+    return "Newsletter does not take video. Unselect Newsletter or drop the video.";
   }
   return null;
 }
@@ -345,6 +359,10 @@ export const LINKEDIN_LAYOUT_OPTIONS: { id: LinkedInLayout; label: string }[] = 
 export type ChannelSettings = {
   reply?: XReplySetting;
   layout?: LinkedInLayout;
+  firstComment?: string;
+  firstCommentId?: string;
+  subject?: string;
+  preview?: string;
 };
 
 export function isXReplySetting(value: string): value is XReplySetting {
@@ -359,6 +377,7 @@ export function channelSettingsKind(platform: string) {
   const value = platform.toUpperCase();
   if (value === "TWITTER") return "reply" as const;
   if (value === "LINKEDIN" || value === "LINKEDIN_PAGE") return "layout" as const;
+  if (value === "NEWSLETTER") return "newsletter" as const;
   return null;
 }
 
@@ -374,8 +393,24 @@ export function cleanChannelSettings(platform: string, raw?: unknown): ChannelSe
   if (kind === "layout") {
     const layout = String(row.layout ?? "");
     if (isLinkedInLayout(layout) && layout !== "images") next.layout = layout;
+    const firstComment = cleanFirstComment(
+      typeof row.firstComment === "string" ? row.firstComment : "",
+    );
+    if (firstComment) next.firstComment = firstComment;
+    const firstCommentId = String(row.firstCommentId ?? "").trim();
+    if (firstCommentId) next.firstCommentId = firstCommentId.slice(0, 200);
+  }
+  if (kind === "newsletter") {
+    const subject = String(row.subject ?? "").trim().slice(0, MAX_NEWSLETTER_SUBJECT);
+    if (subject) next.subject = subject;
+    const preview = String(row.preview ?? "").trim().slice(0, MAX_NEWSLETTER_PREVIEW);
+    if (preview) next.preview = preview;
   }
   return next;
+}
+
+export function firstCommentPending(settings?: ChannelSettings) {
+  return Boolean(settings?.firstComment && !settings.firstCommentId);
 }
 
 /** X API v2 `reply_settings`. Omit for everyone. */

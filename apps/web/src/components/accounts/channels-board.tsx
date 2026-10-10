@@ -223,7 +223,7 @@ export function ChannelsBoard() {
         <p className="max-w-2xl text-sm text-muted">
           {lapsed
             ? "Trial ended. LinkedIn, X, and every other channel wait on Pro. You can look around; posting and connect say pay to use."
-            : "LinkedIn and X are on trial. LinkedIn Page, Telegram, Slack, Discord, and Dev.to unlock on Pro. Medium no longer issues API tokens, so it stays in Unavailable. The rest of the grid is the roadmap."}
+            : "LinkedIn and X are on trial. LinkedIn Page, Telegram, Slack, Discord, Dev.to, and Newsletter unlock on Pro. Medium no longer issues API tokens, so it stays in Unavailable. The rest of the grid is the roadmap."}
         </p>
         {catalog ? (
           <p className="mt-3 text-xs uppercase tracking-wide text-muted">

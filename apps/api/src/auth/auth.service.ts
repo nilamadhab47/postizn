@@ -305,6 +305,8 @@ export class AuthService {
         billingExempt: access.billingExempt,
         trialEndsAt: access.trialEndsAt,
         trialDaysRemaining: access.trialDaysRemaining,
+        promoProEndsAt: access.promoProEndsAt,
+        promoDaysRemaining: access.promoDaysRemaining,
         channelLimit: access.channelLimit,
         postsPerDay: access.postsPerDay,
         postsToday: access.postsToday,

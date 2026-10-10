@@ -85,6 +85,8 @@ export type Me = {
     billingExempt?: boolean;
     trialEndsAt?: string | null;
     trialDaysRemaining?: number | null;
+    promoProEndsAt?: string | null;
+    promoDaysRemaining?: number | null;
     channelLimit: number;
     postsPerDay?: number;
     postsToday?: number;

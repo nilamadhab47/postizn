@@ -32,6 +32,11 @@ import type {
   PaymentProvider,
 } from "./payment-provider";
 import { pickWebhookActor } from "./webhook-identity";
+import {
+  extendedTrialEndsAt,
+  normalizePromoCode,
+  promoProEndsAt,
+} from "./promo";
 
 @Injectable()
 export class BillingService {
@@ -80,6 +85,80 @@ export class BillingService {
           }
         : null,
     };
+  }
+
+  async redeemPromo(userId: string, raw: string) {
+    const code = normalizePromoCode(raw);
+    if (!code) {
+      throw new BadRequestException("Enter a code");
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new BadRequestException("Account not found");
+    if (user.billingExempt) {
+      throw new BadRequestException("This account is already billed off-session");
+    }
+    if (user.plan === "PRO" || user.plan === "STUDIO") {
+      throw new BadRequestException("Codes only work before the first payment");
+    }
+    if (await this.hasPaid(userId)) {
+      throw new BadRequestException("Codes only work before the first payment");
+    }
+
+    const promo = await this.prisma.promoCode.findUnique({ where: { code } });
+    if (!promo?.active) {
+      throw new BadRequestException("That code is not valid");
+    }
+
+    const access = (await this.entitlements.resolve(userId)).access;
+
+    try {
+      if (promo.kind === "TRIAL_EXTEND") {
+        if (access !== "TRIAL") {
+          throw new BadRequestException("This code extends an active trial");
+        }
+        const nextEnd = extendedTrialEndsAt(user.trialStartedAt);
+        if (
+          user.trialEndsAt &&
+          nextEnd.getTime() <= user.trialEndsAt.getTime() + 60_000
+        ) {
+          throw new BadRequestException("Trial is already 30 days");
+        }
+        await this.prisma.$transaction([
+          this.prisma.user.update({
+            where: { id: userId },
+            data: { trialEndsAt: nextEnd, trialClosedAt: null },
+          }),
+          this.prisma.promoRedemption.create({
+            data: { userId, promoCodeId: promo.id },
+          }),
+        ]);
+        return { ok: true as const, kind: promo.kind, message: "Trial now runs 30 days" };
+      }
+
+      if (access !== "FREE") {
+        throw new BadRequestException("This code unlocks Pro after trial ends");
+      }
+      await this.prisma.$transaction([
+        this.prisma.user.update({
+          where: { id: userId },
+          data: { promoProEndsAt: promoProEndsAt() },
+        }),
+        this.prisma.promoRedemption.create({
+          data: { userId, promoCodeId: promo.id },
+        }),
+      ]);
+      await this.entitlements.syncChannelAccess(userId);
+      return { ok: true as const, kind: promo.kind, message: "Pro is on for 14 days" };
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002"
+      ) {
+        throw new BadRequestException("You already used this code");
+      }
+      throw err;
+    }
   }
 
   async createCheckout(userId: string, planRaw: string, intervalRaw: string) {
@@ -379,7 +458,7 @@ export class BillingService {
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: userId },
-        data: { plan, trialClosedAt: new Date() },
+        data: { plan, trialClosedAt: new Date(), promoProEndsAt: null },
       }),
       this.prisma.subscription.upsert({
         where: { userId },
@@ -493,6 +572,21 @@ export class BillingService {
         reason: event.type === "subscription.expired" ? "expired" : "canceled",
       });
     }
+  }
+
+  private async hasPaid(userId: string) {
+    const [sub, checkout] = await Promise.all([
+      this.prisma.subscription.findUnique({
+        where: { userId },
+        select: { status: true },
+      }),
+      this.prisma.billingCheckout.findFirst({
+        where: { userId, status: "COMPLETED" },
+        select: { id: true },
+      }),
+    ]);
+    if (checkout) return true;
+    return Boolean(sub && sub.status !== "INCOMPLETE");
   }
 
   private async markPastDue(event: IncomingBillingEvent) {

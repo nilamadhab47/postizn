@@ -18,6 +18,18 @@ const FILES: Record<string, string> = {
 const LIGHT_PLATE = new Set(["twitter", "medium", "devto"]);
 
 export function ChannelIcon({ slug, className }: { slug: string; className?: string }) {
+  if (slug === "newsletter") {
+    return (
+      <span
+        className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#2b2118] text-[#f4b183] ${className ?? "size-10"}`}
+      >
+        <svg viewBox="0 0 24 24" className="size-[62%] fill-none stroke-current" aria-hidden>
+          <rect x="3.5" y="5.5" width="17" height="13" rx="1.8" strokeWidth="1.8" />
+          <path d="M4 7.2 12 13l8-5.8" strokeWidth="1.8" strokeLinejoin="round" />
+        </svg>
+      </span>
+    );
+  }
   const src = FILES[slug] ?? FILES.linkedin;
   const light = LIGHT_PLATE.has(slug);
   return (

@@ -16,6 +16,8 @@ export function channelLabel(platform: string) {
       return "Slack";
     case "DISCORD":
       return "Discord";
+    case "NEWSLETTER":
+      return "Newsletter";
     default:
       return platform;
   }
@@ -37,6 +39,8 @@ export function platformSlug(platform: string) {
       return "slack";
     case "DISCORD":
       return "discord";
+    case "NEWSLETTER":
+      return "newsletter";
     default:
       return platform.toLowerCase().replace(/_/g, "-");
   }

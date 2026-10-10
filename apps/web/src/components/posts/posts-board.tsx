@@ -320,6 +320,8 @@ function platformLabel(target: Target) {
       return "Slack";
     case "DISCORD":
       return "Discord";
+    case "NEWSLETTER":
+      return "Newsletter";
     default:
       return target.platform;
   }

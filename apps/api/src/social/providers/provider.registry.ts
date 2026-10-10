@@ -8,6 +8,7 @@ import { TelegramProvider } from "./telegram.provider";
 import { DevtoProvider } from "./devto.provider";
 import { SlackProvider } from "./slack.provider";
 import { DiscordProvider } from "./discord.provider";
+import { NewsletterProvider } from "./newsletter.provider";
 
 @Injectable()
 export class ProviderRegistry {
@@ -22,6 +23,7 @@ export class ProviderRegistry {
     devto: DevtoProvider,
     slack: SlackProvider,
     discord: DiscordProvider,
+    newsletter: NewsletterProvider,
   ) {
     const providers = [
       linkedin,
@@ -31,6 +33,7 @@ export class ProviderRegistry {
       slack,
       discord,
       devto,
+      newsletter,
     ];
     this.byPlatform = new Map(providers.map((p) => [p.platform, p]));
     this.bySlug = new Map(providers.map((p) => [p.slug, p]));

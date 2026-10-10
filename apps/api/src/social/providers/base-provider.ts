@@ -25,6 +25,8 @@ export type PublishInput = {
   settings?: Record<string, unknown>;
   accessToken: string;
   platformId: string;
+  fromEmail?: string;
+  fromName?: string;
 };
 
 export type UploadInput = {
@@ -66,4 +68,13 @@ export abstract class BaseProvider {
   abstract uploadMedia(input: UploadInput): Promise<{ id: string }>;
 
   abstract publishPost(input: PublishInput): Promise<{ platformPostId: string }>;
+
+  async commentOnPost(_input: {
+    accessToken: string;
+    platformId: string;
+    platformPostId: string;
+    text: string;
+  }): Promise<{ commentId: string } | null> {
+    return null;
+  }
 }

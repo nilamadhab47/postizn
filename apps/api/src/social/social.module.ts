@@ -12,6 +12,7 @@ import { TelegramProvider } from "./providers/telegram.provider";
 import { DevtoProvider } from "./providers/devto.provider";
 import { SlackProvider } from "./providers/slack.provider";
 import { DiscordProvider } from "./providers/discord.provider";
+import { NewsletterProvider } from "./providers/newsletter.provider";
 
 @Module({
   imports: [AuthModule, StorageModule],
@@ -27,6 +28,7 @@ import { DiscordProvider } from "./providers/discord.provider";
     DevtoProvider,
     SlackProvider,
     DiscordProvider,
+    NewsletterProvider,
   ],
   exports: [SocialService, ProviderRegistry],
 })

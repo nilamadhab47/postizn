@@ -337,6 +337,8 @@ export function ChannelPreview({
       return <LinkedInPreview {...props} />;
     case "DEVTO":
       return <DevtoPreview {...props} />;
+    case "NEWSLETTER":
+      return <NewsletterPreview {...props} />;
     default:
       return <LinkedInPreview {...props} />;
   }
@@ -362,6 +364,30 @@ export function DevtoPreview({ name, handle, body, image, media, when }: Preview
       </div>
       <p className="px-4 pb-3 text-right text-[10px] font-bold text-[#575757]">
         {count.toLocaleString("en-IN")} chars · unpublished
+      </p>
+    </article>
+  );
+}
+
+export function NewsletterPreview({ name, handle, body, image, media, when }: PreviewProps) {
+  const files = resolveMedia(media, image);
+  const count = Array.from(body).length;
+  return (
+    <article className="overflow-hidden rounded-2xl border border-[#ead9c8] bg-[#fffaf4] text-[#2b2118] shadow-[0_12px_40px_-24px_rgba(0,0,0,0.6)]">
+      <div className="border-b border-[#ead9c8] px-4 py-3">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-[#8a6a4a]">
+          Newsletter · {handle || name} · {when}
+        </p>
+        <p className="mt-1 text-sm font-semibold text-[#8a6a4a]">
+          Subject and preview sit on the Newsletter tab.
+        </p>
+      </div>
+      {files.length ? <MediaStrip media={files} /> : null}
+      <p className="whitespace-pre-wrap p-4 text-[14px] leading-relaxed">
+        {body || "Your email body shows up here."}
+      </p>
+      <p className="px-4 pb-3 text-right text-[10px] font-bold text-[#8a6a4a]">
+        {count.toLocaleString("en-IN")} chars
       </p>
     </article>
   );

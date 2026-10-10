@@ -27,6 +27,7 @@ const PAID_PLATFORMS: Platform[] = [
   Platform.DEVTO,
   Platform.SLACK,
   Platform.DISCORD,
+  Platform.NEWSLETTER,
 ];
 
 export type AccessSnapshot = {
@@ -35,6 +36,8 @@ export type AccessSnapshot = {
   billingExempt: boolean;
   trialEndsAt: string | null;
   trialDaysRemaining: number | null;
+  promoProEndsAt: string | null;
+  promoDaysRemaining: number | null;
   channelLimit: number;
   postsPerDay: number;
   postsToday: number;
@@ -67,6 +70,7 @@ export class EntitlementsService {
   async resolve(userId: string): Promise<AccessSnapshot> {
     const user = await this.loadUser(userId);
     const ready = await this.ensureCounters(await this.closeTrialIfNeeded(user));
+    await this.expirePromoIfNeeded(ready);
     await this.maybeRemindTrial(ready, new Date());
     return this.snapshot(ready);
   }
@@ -253,12 +257,15 @@ export class EntitlementsService {
     const caps = capsFor(access, user.billingExempt);
     const catalog = catalogEntitlements(access, user.billingExempt);
     const trialDaysRemaining = trialDaysLeft(user.trialEndsAt, access);
+    const promoDaysRemaining = promoDaysLeft(user.promoProEndsAt, access);
     return {
       access,
       plan: access === "STUDIO" || access === "PRO" ? access : "FREE",
       billingExempt: user.billingExempt,
       trialEndsAt: user.trialEndsAt?.toISOString() ?? null,
       trialDaysRemaining,
+      promoProEndsAt: user.promoProEndsAt?.toISOString() ?? null,
+      promoDaysRemaining,
       channelLimit: caps.channelLimit,
       postsPerDay: caps.postsPerDay,
       postsToday: user.postsToday,
@@ -278,10 +285,13 @@ export class EntitlementsService {
     };
   }
 
-  private accessOf(user: Pick<User, "plan" | "billingExempt" | "trialEndsAt">): AccessId {
+  private accessOf(
+    user: Pick<User, "plan" | "billingExempt" | "trialEndsAt" | "promoProEndsAt">,
+  ): AccessId {
     if (user.billingExempt) return "PRO";
     if (user.plan === "STUDIO") return "STUDIO";
     if (user.plan === "PRO") return "PRO";
+    if (user.promoProEndsAt && user.promoProEndsAt.getTime() > Date.now()) return "PRO";
     if (user.trialEndsAt && user.trialEndsAt.getTime() > Date.now()) return "TRIAL";
     return "FREE";
   }
@@ -346,6 +356,23 @@ export class EntitlementsService {
         data: { trialReminded3dAt: now },
       });
       if (marked.count) this.mail.trialReminder(user, days);
+    }
+  }
+
+  private async expirePromoIfNeeded(user: User) {
+    if (user.billingExempt || user.plan === "PRO" || user.plan === "STUDIO") {
+      return;
+    }
+    if (!user.promoProEndsAt || user.promoProEndsAt.getTime() > Date.now()) {
+      return;
+    }
+    const access = this.accessOf(user);
+    if (access === "TRIAL") {
+      await this.pauseToTrial(user.id);
+      return;
+    }
+    if (access === "FREE") {
+      await this.pauseAll(user.id);
     }
   }
 
@@ -423,6 +450,11 @@ function label(access: AccessId) {
 
 function trialDaysLeft(ends: Date | null, access: AccessId) {
   if (access !== "TRIAL" || !ends) return null;
+  return Math.max(0, Math.ceil((ends.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+}
+
+function promoDaysLeft(ends: Date | null, access: AccessId) {
+  if (access !== "PRO" || !ends || ends.getTime() <= Date.now()) return null;
   return Math.max(0, Math.ceil((ends.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
 }
 

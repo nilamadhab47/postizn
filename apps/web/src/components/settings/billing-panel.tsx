@@ -10,6 +10,7 @@ import { loadRazorpayCheckout, openRazorpayModal } from "@/lib/razorpay-checkout
 import { track } from "@/lib/analytics";
 import { PLAN_WELCOME_EVENT } from "@/lib/onboarding";
 import { rupeesFromPaise, type BillingInterval, type PaidPlanId } from "@postn/shared";
+import { CouponDialog } from "@/components/billing/coupon-dialog";
 
 type Sku = { amountPaise: number; listPaise: number };
 
@@ -48,6 +49,8 @@ export function BillingPanel({ access }: { access: AccessId }) {
   const [info, setInfo] = useState<BillingMe | null>(null);
   const [busy, setBusy] = useState<PaidPlanId | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [couponOpen, setCouponOpen] = useState(false);
+  const promoDays = entitlements?.promoDaysRemaining;
 
   useEffect(() => {
     void api<BillingMe>("/billing/me")
@@ -181,6 +184,8 @@ export function BillingPanel({ access }: { access: AccessId }) {
     onClick: () => void startCheckout("STUDIO"),
   });
 
+  const showCoupon = !exempt && !billed;
+
   return (
     <div>
       {access === "TRIAL" ? (
@@ -192,7 +197,23 @@ export function BillingPanel({ access }: { access: AccessId }) {
         <p className="mt-3 max-w-lg text-sm font-semibold text-accent">
           Trial ended. LinkedIn, X, and every other channel wait on Pro. Pay to use.
         </p>
+      ) : access === "PRO" && !billed && promoDays != null ? (
+        <p className="mt-3 max-w-lg text-sm font-semibold text-accent">
+          Courtesy Pro · {promoDays} day{promoDays === 1 ? "" : "s"} left. No
+          payment on file.
+        </p>
       ) : null}
+
+      {showCoupon ? (
+        <button
+          type="button"
+          onClick={() => setCouponOpen(true)}
+          className="mt-3 text-sm font-bold text-accent hover:underline"
+        >
+          Have a code?
+        </button>
+      ) : null}
+      <CouponDialog open={couponOpen} onOpenChange={setCouponOpen} />
 
       <div className="mt-4 inline-flex rounded-full border border-line p-1">
         {(["monthly", "yearly"] as const).map((id) => (

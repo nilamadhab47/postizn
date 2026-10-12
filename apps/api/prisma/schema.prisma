@@ -70,6 +70,8 @@ model User {
   subscription   Subscription?
   checkouts      BillingCheckout[]
   promoRedemptions PromoRedemption[]
+  invitesCreated Invite[] @relation("InviteCreator")
+  testerInvite   Invite?  @relation("InviteUser")
 }
 
 model SocialAccount {
@@ -266,6 +268,22 @@ model Waitlist {
   id        String   @id @default(cuid())
   email     String   @unique
   createdAt DateTime @default(now())
+}
+
+model Invite {
+  id          String    @id @default(cuid())
+  token       String    @unique
+  email       String    @unique
+  name        String?
+  createdById String
+  userId      String?   @unique
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  createdBy User  @relation("InviteCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  user      User? @relation("InviteUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 enum PromoKind {

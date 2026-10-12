@@ -6,6 +6,7 @@ import {
   LoginOauthStateStore,
   type LoginOauthProvider,
 } from "./login-oauth-state.store";
+import { isWaitlistMode } from "./waitlist-mode";
 
 const LINKEDIN_AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization";
 const LINKEDIN_TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken";
@@ -38,6 +39,9 @@ export class OauthLoginService {
   ) {}
 
   providers() {
+    if (isWaitlistMode(this.config)) {
+      return { google: false, linkedin: false, twitter: false };
+    }
     return {
       google: this.isGoogleConfigured(),
       linkedin: this.isLinkedInConfigured(),
@@ -46,6 +50,9 @@ export class OauthLoginService {
   }
 
   async authorizeUrl(provider: LoginOauthProvider) {
+    if (isWaitlistMode(this.config)) {
+      return `${this.frontendUrl()}/`;
+    }
     if (!this.isConfigured(provider)) {
       return this.failUrl("not_configured");
     }

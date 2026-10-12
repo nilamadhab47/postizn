@@ -1,7 +1,9 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
@@ -14,6 +16,8 @@ import { EntitlementsService } from "../plan/entitlements.service";
 import { trialStartData } from "../plan/entitlements";
 import { MailService } from "../mail/mail.service";
 import { oauthLinkDecision } from "./oauth-link";
+import { isWaitlistMode } from "./waitlist-mode";
+import { isInviteToken, newInviteToken } from "./invite.rules";
 
 export type GoogleProfile = {
   googleId: string;
@@ -88,6 +92,11 @@ export class AuthService {
   }
 
   async register(input: CredentialsInput) {
+    if (isWaitlistMode(this.config)) {
+      throw new ForbiddenException(
+        "postN is invite-only right now. Use the link we sent you.",
+      );
+    }
     const email = this.requireEmail(input.email);
     const password = this.requirePassword(input.password);
     const name = input.name?.trim() || null;
@@ -324,6 +333,143 @@ export class AuthService {
         freeChannels: access.freeChannels,
         proChannels: access.proChannels,
       },
+    };
+  }
+
+  async listInvites(actorId: string) {
+    await this.requireExempt(actorId);
+    const invites = await this.prisma.invite.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+    return { items: invites.map((invite) => this.presentInvite(invite)) };
+  }
+
+  async createInvite(actorId: string, input: { email: string; name?: string }) {
+    await this.requireExempt(actorId);
+    const email = this.requireEmail(input.email);
+    const name = input.name?.trim() || null;
+    const existing = await this.prisma.invite.findUnique({ where: { email } });
+    if (existing) {
+      const invite =
+        name && !existing.name
+          ? await this.prisma.invite.update({
+              where: { id: existing.id },
+              data: { name },
+            })
+          : existing;
+      return this.presentInvite(invite);
+    }
+    const invite = await this.prisma.invite.create({
+      data: {
+        token: newInviteToken(),
+        email,
+        name,
+        createdById: actorId,
+      },
+    });
+    return this.presentInvite(invite);
+  }
+
+  async getInvite(token: string) {
+    const invite = await this.findInvite(token);
+    return {
+      email: invite.email,
+      name: invite.name,
+      accepted: Boolean(invite.acceptedAt),
+    };
+  }
+
+  async acceptInvite(token: string, input: { password: string; name?: string }) {
+    const invite = await this.findInvite(token);
+    const password = this.requirePassword(input.password);
+    const name = input.name?.trim() || invite.name;
+
+    let user = await this.prisma.user.findUnique({
+      where: { email: invite.email },
+    });
+
+    if (!user) {
+      const passwordHash = await bcrypt.hash(password, 12);
+      user = await this.prisma.user.create({
+        data: {
+          email: invite.email,
+          passwordHash,
+          name,
+          plan: "FREE",
+          ...trialStartData(),
+        },
+      });
+      this.mail.welcome(user);
+    } else if (user.passwordHash) {
+      const ok = await bcrypt.compare(password, user.passwordHash);
+      if (!ok) {
+        throw new UnauthorizedException("Password is incorrect");
+      }
+    } else {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: await bcrypt.hash(password, 12) },
+      });
+    }
+
+    await this.prisma.invite.update({
+      where: { id: invite.id },
+      data: {
+        acceptedAt: invite.acceptedAt ?? new Date(),
+        userId: user.id,
+        name: name || invite.name,
+      },
+    });
+    return user;
+  }
+
+  async listWaitlist(actorId: string) {
+    await this.requireExempt(actorId);
+    const items = await this.prisma.waitlist.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+    return { items };
+  }
+
+  private async findInvite(token: string) {
+    if (!isInviteToken(token)) {
+      throw new NotFoundException("That invite link is not valid");
+    }
+    const invite = await this.prisma.invite.findUnique({ where: { token } });
+    if (!invite) {
+      throw new NotFoundException("That invite link is not valid");
+    }
+    return invite;
+  }
+
+  private async requireExempt(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { billingExempt: true },
+    });
+    if (!user?.billingExempt) {
+      throw new ForbiddenException("Only the postN team can invite testers");
+    }
+  }
+
+  private presentInvite(invite: {
+    id: string;
+    token: string;
+    email: string;
+    name: string | null;
+    acceptedAt: Date | null;
+    createdAt: Date;
+  }) {
+    const origin = (
+      this.config.get<string>("FRONTEND_URL") ?? "http://localhost:3000"
+    ).replace(/\/$/, "");
+    return {
+      id: invite.id,
+      email: invite.email,
+      name: invite.name,
+      acceptedAt: invite.acceptedAt,
+      createdAt: invite.createdAt,
+      url: `${origin}/invite/${invite.token}`,
     };
   }
 

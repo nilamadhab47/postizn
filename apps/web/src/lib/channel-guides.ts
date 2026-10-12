@@ -1,3 +1,5 @@
+import { API_URL } from "@/lib/api";
+
 export type ChannelGuide = {
   steps: string[];
   links?: Array<{ label: string; href: string }>;
@@ -12,7 +14,7 @@ export const CHANNEL_GUIDES: Record<string, ChannelGuide> = {
       "Allow OpenID (name/email) and Share on LinkedIn (create posts).",
       "LinkedIn sends you back to Channels. Your name should show, not demo.",
     ],
-    note: "Personal profile only. The LinkedIn app needs Sign In with LinkedIn using OpenID Connect plus Share on LinkedIn. Redirect URL: http://localhost:4000/social/callback/linkedin",
+    note: `Personal profile only. The LinkedIn app needs Sign In with LinkedIn using OpenID Connect plus Share on LinkedIn. Redirect URL: ${API_URL}/social/callback/linkedin`,
   },
   twitter: {
     steps: [
@@ -85,7 +87,7 @@ export const CHANNEL_GUIDES: Record<string, ChannelGuide> = {
     steps: [
       "This is a company Page, not your personal profile. Stay an admin of the Page.",
       "In the LinkedIn developer app, add the Community Management API product.",
-      "Auth → redirect URLs → add http://localhost:4000/social/callback/linkedin-page",
+      `Auth → redirect URLs → add ${API_URL}/social/callback/linkedin-page`,
       "Click Connect. Approve posting as the organization.",
       "If you admin more than one Page, we attach the first one LinkedIn returns.",
       "Channels should show the Page name. Then Test post.",

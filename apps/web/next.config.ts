@@ -13,8 +13,20 @@ const csp = [
   "form-action 'self'",
 ].join("; ");
 
+const waitlistMode =
+  process.env.WAITLIST_MODE != null
+    ? process.env.WAITLIST_MODE === "true"
+    : process.env.NODE_ENV === "production";
+
 const nextConfig: NextConfig = {
   transpilePackages: ["@postn/shared"],
+  env: {
+    NEXT_PUBLIC_WAITLIST_MODE: waitlistMode ? "true" : "false",
+  },
+  compiler: {
+    removeConsole:
+      process.env.NODE_ENV === "production" ? { exclude: ["error"] } : false,
+  },
   images: {
     remotePatterns: [
       {

@@ -50,3 +50,9 @@ export const WAITLIST_MODE =
   process.env.WAITLIST_MODE != null
     ? process.env.WAITLIST_MODE === "true"
     : process.env.NODE_ENV === "production";
+
+/** Client-safe. Inlined at build from WAITLIST_MODE / NODE_ENV. */
+export const CLIENT_WAITLIST_MODE =
+  process.env.NEXT_PUBLIC_WAITLIST_MODE != null
+    ? process.env.NEXT_PUBLIC_WAITLIST_MODE === "true"
+    : process.env.NODE_ENV === "production";

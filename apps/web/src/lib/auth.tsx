@@ -12,6 +12,7 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 import { api, type Me } from "@/lib/api";
 import { identifyUser, resetUser, track } from "@/lib/analytics";
+import { CLIENT_WAITLIST_MODE } from "@/lib/site";
 
 type AuthContextValue = {
   user: Me | null;
@@ -37,8 +38,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       setUser(null);
       const path = pathnameRef.current;
-      if (path !== "/login" && path !== "/") {
-        router.replace("/login");
+      if (path !== "/login" && path !== "/" && !path.startsWith("/invite")) {
+        router.replace(CLIENT_WAITLIST_MODE ? "/" : "/login");
       }
     } finally {
       setLoading(false);
@@ -50,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     resetUser();
     await api("/auth/logout", { method: "POST" });
     setUser(null);
-    router.replace("/login");
+    router.replace(CLIENT_WAITLIST_MODE ? "/" : "/login");
   }, [router]);
 
   useEffect(() => {

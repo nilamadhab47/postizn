@@ -13,6 +13,7 @@ import {
   AI_RATE_PER_HOUR,
   AI_RATE_PER_MINUTE,
   PAY_TO_USE,
+  resolveAccess,
   TRIAL_CHANNEL_LIMIT,
   capsFor,
   entitlements as catalogEntitlements,
@@ -288,12 +289,7 @@ export class EntitlementsService {
   private accessOf(
     user: Pick<User, "plan" | "billingExempt" | "trialEndsAt" | "promoProEndsAt">,
   ): AccessId {
-    if (user.billingExempt) return "PRO";
-    if (user.plan === "STUDIO") return "STUDIO";
-    if (user.plan === "PRO") return "PRO";
-    if (user.promoProEndsAt && user.promoProEndsAt.getTime() > Date.now()) return "PRO";
-    if (user.trialEndsAt && user.trialEndsAt.getTime() > Date.now()) return "TRIAL";
-    return "FREE";
+    return resolveAccess(user);
   }
 
   private async loadUser(userId: string) {

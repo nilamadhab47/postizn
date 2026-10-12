@@ -9,6 +9,7 @@ import { AppHeader } from "@/components/layout/app-header";
 import { channelLabel, formatIst } from "@/lib/platforms";
 import { PayLink } from "@/components/billing/pay-link";
 import { BillingPanel } from "@/components/settings/billing-panel";
+import { TestersPanel } from "@/components/settings/testers-panel";
 import { UserAvatar } from "@/components/layout/user-avatar";
 
 const TABS = [
@@ -118,6 +119,7 @@ function AccountPanel() {
         Plan
       </h2>
       <BillingPanel access={access} />
+      {user?.entitlements?.billingExempt ? <TestersPanel /> : null}
     </div>
   );
 }

@@ -92,6 +92,23 @@ const CAPS: Record<AccessId, AccessCaps> = {
   },
 };
 
+export function resolveAccess(
+  user: {
+    plan: string;
+    billingExempt: boolean;
+    trialEndsAt: Date | null;
+    promoProEndsAt?: Date | null;
+  },
+  now = new Date(),
+): AccessId {
+  if (user.billingExempt) return "PRO";
+  if (user.plan === "STUDIO") return "STUDIO";
+  if (user.plan === "PRO") return "PRO";
+  if (user.promoProEndsAt && user.promoProEndsAt.getTime() > now.getTime()) return "PRO";
+  if (user.trialEndsAt && user.trialEndsAt.getTime() > now.getTime()) return "TRIAL";
+  return "FREE";
+}
+
 export function capsFor(access: AccessId, billingExempt = false): AccessCaps {
   const base = CAPS[access];
   if (billingExempt) {

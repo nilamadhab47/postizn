@@ -13,9 +13,13 @@ const OAUTH_ERRORS: Record<string, string> = {
 export function AuthCard({
   mode,
   oauthError,
+  hideRegister = false,
+  hideOauth = false,
 }: {
   mode: "login" | "register";
   oauthError?: string;
+  hideRegister?: boolean;
+  hideOauth?: boolean;
 }) {
   const isRegister = mode === "register";
   const oauthMessage = oauthError ? OAUTH_ERRORS[oauthError] ?? OAUTH_ERRORS.oauth_failed : null;
@@ -29,34 +33,38 @@ export function AuthCard({
             post<span className="text-accent">N</span>
           </span>
         </p>
-        <div className="mt-6 grid grid-cols-2 rounded-lg border border-line p-1 text-sm">
-          <Link
-            href="/login"
-            className={`rounded-md py-2 text-center ${
-              isRegister ? "text-muted" : "bg-foreground text-background"
-            }`}
-          >
-            Sign in
-          </Link>
-          <Link
-            href="/register"
-            className={`rounded-md py-2 text-center ${
-              isRegister ? "bg-foreground text-background" : "text-muted"
-            }`}
-          >
-            Sign up
-          </Link>
-        </div>
+        {hideRegister ? null : (
+          <div className="mt-6 grid grid-cols-2 rounded-lg border border-line p-1 text-sm">
+            <Link
+              href="/login"
+              className={`rounded-md py-2 text-center ${
+                isRegister ? "text-muted" : "bg-foreground text-background"
+              }`}
+            >
+              Sign in
+            </Link>
+            <Link
+              href="/register"
+              className={`rounded-md py-2 text-center ${
+                isRegister ? "bg-foreground text-background" : "text-muted"
+              }`}
+            >
+              Sign up
+            </Link>
+          </div>
+        )}
         <h1 className="mt-6 text-3xl font-bold">
           {isRegister ? "Create account" : "Welcome back"}
         </h1>
         <p className="mt-2 text-sm text-muted">
           {isRegister
             ? "Sign up with Google, LinkedIn, X, or email. 14-day trial, no card."
-            : "Sign in with Google, LinkedIn, X, or email."}
+            : hideRegister
+              ? "Email and password for the postN team."
+              : "Sign in with Google, LinkedIn, X, or email."}
         </p>
         {oauthMessage ? <p className="mt-4 text-sm text-red-400">{oauthMessage}</p> : null}
-        <OauthButtons mode={mode} />
+        {hideOauth ? null : <OauthButtons mode={mode} />}
         <AuthForm mode={mode} />
       </div>
     </div>

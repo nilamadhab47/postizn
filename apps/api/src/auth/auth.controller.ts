@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Patch, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from "@nestjs/common";
 import type { Request, Response } from "express";
 import { Throttle } from "@nestjs/throttler";
 import { SESSION_COOKIE } from "./auth.constants";
@@ -9,6 +20,8 @@ import { OauthLoginService } from "./oauth-login.service";
 import type { LoginOauthProvider } from "./login-oauth-state.store";
 import { CredentialsDto } from "./dto/credentials.dto";
 import { ProfileDto } from "./dto/profile.dto";
+import { CreateInviteDto } from "./dto/create-invite.dto";
+import { AcceptInviteDto } from "./dto/accept-invite.dto";
 
 @Controller("auth")
 export class AuthController {
@@ -67,6 +80,49 @@ export class AuthController {
     await this.auth.revokeSessionFromRequest(req);
     res.clearCookie(SESSION_COOKIE, this.auth.clearCookieOptions());
     return { ok: true };
+  }
+
+  @Get("invites")
+  @UseGuards(JwtAuthGuard)
+  listInvites(@CurrentUser() user: JwtUser) {
+    return this.auth.listInvites(user.userId);
+  }
+
+  @Post("invites")
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  createInvite(@CurrentUser() user: JwtUser, @Body() body: CreateInviteDto) {
+    return this.auth.createInvite(user.userId, {
+      email: body.email,
+      name: body.name,
+    });
+  }
+
+  @Get("waitlist")
+  @UseGuards(JwtAuthGuard)
+  listWaitlist(@CurrentUser() user: JwtUser) {
+    return this.auth.listWaitlist(user.userId);
+  }
+
+  @Get("invite/:token")
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  getInvite(@Param("token") token: string) {
+    return this.auth.getInvite(token);
+  }
+
+  @Post("invite/:token")
+  @Throttle({ default: { limit: 8, ttl: 60_000 } })
+  async acceptInvite(
+    @Param("token") token: string,
+    @Body() body: AcceptInviteDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const user = await this.auth.acceptInvite(token, {
+      password: body.password,
+      name: body.name,
+    });
+    await this.setSession(res, user.id);
+    return this.auth.getMe(user.id);
   }
 
   @Get("providers")

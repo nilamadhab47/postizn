@@ -6,7 +6,11 @@ import { AppModule } from "./app.module";
 import { corsOrigins } from "./config/cors-origins";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const isProd = process.env.NODE_ENV === "production";
+  const app = await NestFactory.create(AppModule, {
+    rawBody: true,
+    logger: isProd ? ["error", "warn"] : undefined,
+  });
 
   app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cookieParser());
